@@ -1,6 +1,22 @@
 version: "3.8"
 
 services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - KAPOW_DOMAIN=${KAPOW_DOMAIN:-localhost}
+    depends_on:
+      - actions
+      - board
+    restart: unless-stopped
+
   planner:
     build:
       context: ./planner
@@ -8,8 +24,8 @@ services:
     env_file: .env
     environment:
       - PORT=3001
-    ports:
-      - "3001:3001"
+    expose:
+      - "3001"
     restart: unless-stopped
 
   builder:
@@ -19,8 +35,8 @@ services:
     env_file: .env
     environment:
       - PORT=3002
-    ports:
-      - "3002:3002"
+    expose:
+      - "3002"
     restart: unless-stopped
 
   qa:
@@ -30,8 +46,8 @@ services:
     env_file: .env
     environment:
       - PORT=3003
-    ports:
-      - "3003:3003"
+    expose:
+      - "3003"
     restart: unless-stopped
 
   gate:
@@ -41,8 +57,8 @@ services:
     env_file: .env
     environment:
       - PORT=3004
-    ports:
-      - "3004:3004"
+    expose:
+      - "3004"
     restart: unless-stopped
 
   actions:
@@ -56,8 +72,8 @@ services:
       - BUILDER_URL=http://builder:3002
       - QA_URL=http://qa:3003
       - GATE_URL=http://gate:3004
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     depends_on:
       - planner
       - builder
@@ -70,11 +86,11 @@ services:
     environment:
       POSTGRES_DB: kapow_board
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     restart: unless-stopped
 
   board:
@@ -84,10 +100,10 @@ services:
     env_file: .env
     environment:
       - PORT=3005
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/kapow_board
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/kapow_board
       - KAPOW_ACTIONS_URL=http://actions:3000
-    ports:
-      - "3005:3005"
+    expose:
+      - "3005"
     depends_on:
       - postgres
       - actions
@@ -95,3 +111,5 @@ services:
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
