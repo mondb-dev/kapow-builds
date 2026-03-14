@@ -1,0 +1,97 @@
+version: "3.8"
+
+services:
+  planner:
+    build:
+      context: ./planner
+      dockerfile: ../Dockerfile.agent
+    env_file: .env
+    environment:
+      - PORT=3001
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  builder:
+    build:
+      context: ./builder
+      dockerfile: ../Dockerfile.agent
+    env_file: .env
+    environment:
+      - PORT=3002
+    ports:
+      - "3002:3002"
+    restart: unless-stopped
+
+  qa:
+    build:
+      context: ./qa
+      dockerfile: ../Dockerfile.agent
+    env_file: .env
+    environment:
+      - PORT=3003
+    ports:
+      - "3003:3003"
+    restart: unless-stopped
+
+  gate:
+    build:
+      context: ./gate
+      dockerfile: ../Dockerfile.agent
+    env_file: .env
+    environment:
+      - PORT=3004
+    ports:
+      - "3004:3004"
+    restart: unless-stopped
+
+  actions:
+    build:
+      context: ./actions
+      dockerfile: ../Dockerfile.agent
+    env_file: .env
+    environment:
+      - PORT=3000
+      - PLANNER_URL=http://planner:3001
+      - BUILDER_URL=http://builder:3002
+      - QA_URL=http://qa:3003
+      - GATE_URL=http://gate:3004
+    ports:
+      - "3000:3000"
+    depends_on:
+      - planner
+      - builder
+      - qa
+      - gate
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kapow_board
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  board:
+    build:
+      context: ./board
+      dockerfile: ../Dockerfile.board
+    env_file: .env
+    environment:
+      - PORT=3005
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/kapow_board
+      - KAPOW_ACTIONS_URL=http://actions:3000
+    ports:
+      - "3005:3005"
+    depends_on:
+      - postgres
+      - actions
+    restart: unless-stopped
+
+volumes:
+  pgdata:
