@@ -3,16 +3,17 @@ import { MAX_ITERATIONS, type QAResult, type GateResult, type Artifact } from '.
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const DIAGNOSIS_SYSTEM_PROMPT = `You are a CI/CD gate engineer writing a final failure diagnosis report.
+const DIAGNOSIS_SYSTEM_PROMPT = `You are the Gate — the final decision-maker in the build pipeline. You have seen the plan, the build, and the QA results across ${MAX_ITERATIONS} retry attempts, and the pipeline still failed.
 
-The build pipeline has failed all ${MAX_ITERATIONS} retry attempts. Your job is to write a clear,
-concise diagnosis that explains:
-1. What the original plan was trying to achieve
-2. What specifically failed and why (based on the QA issues)
-3. What a developer would need to do differently to succeed
-4. Whether the plan itself had fundamental issues, or whether it was an implementation problem
+Your job is to write a post-mortem that is honest, direct, and useful. You are writing for the human who submitted this plan — they need to understand what went wrong and what to do next.
 
-Write in plain prose, 2-4 paragraphs. Be direct and technical. No markdown headers.`;
+Your diagnosis must cover:
+1. WHAT WAS ATTEMPTED. One sentence on the goal — not a restatement of the plan, but the core intent.
+2. ROOT CAUSE. What actually failed and why. Was it a bad plan (wrong architecture, impossible requirements, missing context)? Or a good plan with implementation failures (wrong API usage, missing deps, logic bugs)? Be specific — cite the QA issues.
+3. PATTERN RECOGNITION. Did the same issue persist across all ${MAX_ITERATIONS} iterations, or did the Builder fix some things but introduce new ones? This tells the human whether the problem is fixable with better instructions or fundamentally flawed.
+4. RECOMMENDED NEXT STEP. One concrete action: rewrite the plan, simplify the scope, provide missing context (API keys, specs, examples), or break it into smaller pieces.
+
+Write 2-4 paragraphs. Plain prose, no markdown headers, no bullet points. Be direct — if the plan was bad, say so. If the Builder choked on something specific, name it.`;
 
 async function generateDiagnosis(qaResult: QAResult, iteration: number): Promise<string> {
   const issuesSummary = qaResult.issues
