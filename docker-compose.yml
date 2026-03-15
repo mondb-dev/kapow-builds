@@ -72,6 +72,7 @@ services:
       - BUILDER_URL=http://builder:3002
       - QA_URL=http://qa:3003
       - GATE_URL=http://gate:3004
+      - BOARD_URL=http://board:3005
     expose:
       - "3000"
     depends_on:

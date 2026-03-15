@@ -11,8 +11,9 @@ export interface Issue {
   file?: string;
 }
 
-export interface QAResult {
+export interface TaskQAResult {
   runId: string;
+  taskId: string;
   passed: boolean;
   issues: Issue[];
   delta: string;
@@ -29,7 +30,7 @@ export interface GateResult {
 
 export interface GateRequest {
   runId: string;
-  qaResult: QAResult;
+  qaResult: TaskQAResult;
   iteration: number;
   artifacts?: Artifact[];
 }

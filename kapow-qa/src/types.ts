@@ -6,12 +6,21 @@ export interface Task {
   acceptanceCriteria: string[];
 }
 
-export interface TaskGraph {
+export interface Phase {
   id: string;
-  originalPlan: string;
+  name: string;
+  description: string;
   tasks: Task[];
-  constraints: string[];
-  context: Record<string, unknown>;
+  dependencies: string[];
+}
+
+export interface ArchitectureDoc {
+  overview: string;
+  techStack: string;
+  fileStructure: string;
+  conventions: string;
+  resolvedAmbiguities: string[];
+  notes: string;
 }
 
 export interface Artifact {
@@ -20,9 +29,9 @@ export interface Artifact {
   content?: string;
 }
 
-export interface BuildResult {
+export interface TaskBuildResult {
   runId: string;
-  taskGraphId: string;
+  taskId: string;
   sandboxPath: string;
   artifacts: Artifact[];
   logs: string[];
@@ -36,15 +45,18 @@ export interface Issue {
   file?: string;
 }
 
-export interface QAResult {
+export interface TaskQARequest {
   runId: string;
+  task: Task;
+  phase: Phase;
+  architecture: ArchitectureDoc;
+  buildResult: TaskBuildResult;
+}
+
+export interface TaskQAResult {
+  runId: string;
+  taskId: string;
   passed: boolean;
   issues: Issue[];
   delta: string;
-}
-
-export interface QARequest {
-  runId: string;
-  taskGraph: TaskGraph;
-  buildResult: BuildResult;
 }

@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { validateAndPlan } from './planner.js';
+import { createProjectPlan } from './planner.js';
 import type { PlanRequest } from './types.js';
 
 const app = express();
@@ -20,15 +20,16 @@ app.post('/plan', async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
     if (!plan || typeof plan !== 'string') {
-      res.status(400).json({ error: 'plan is required' });
+      res.status(400).json({ error: 'plan (client brief) is required' });
       return;
     }
 
     console.log(`[${runId}] Planning...`);
-    const taskGraph = await validateAndPlan(runId, plan);
-    console.log(`[${runId}] Plan complete: ${taskGraph.tasks.length} tasks`);
+    const projectPlan = await createProjectPlan(runId, plan);
+    const totalTasks = projectPlan.phases.reduce((sum, p) => sum + p.tasks.length, 0);
+    console.log(`[${runId}] Plan complete: ${projectPlan.phases.length} phases, ${totalTasks} tasks`);
 
-    res.json(taskGraph);
+    res.json(projectPlan);
   } catch (err) {
     next(err);
   }
@@ -39,6 +40,11 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Planner error:', err);
   res.status(500).json({ error: err.message });
 });
+
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error('FATAL: ANTHROPIC_API_KEY is required');
+  process.exit(1);
+}
 
 app.listen(PORT, () => {
   console.log(`kapow-planner listening on port ${PORT}`);

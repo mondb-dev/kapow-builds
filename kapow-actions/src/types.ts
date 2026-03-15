@@ -6,23 +6,40 @@ export interface Task {
   acceptanceCriteria: string[];
 }
 
-export interface TaskGraph {
+export interface Phase {
   id: string;
-  originalPlan: string;
+  name: string;
+  description: string;
   tasks: Task[];
+  dependencies: string[];
+}
+
+export interface ArchitectureDoc {
+  overview: string;
+  techStack: string;
+  fileStructure: string;
+  conventions: string;
+  resolvedAmbiguities: string[];
+  notes: string;
+}
+
+export interface ProjectPlan {
+  id: string;
+  originalBrief: string;
+  phases: Phase[];
   constraints: string[];
-  context: Record<string, unknown>;
+  architecture: ArchitectureDoc;
 }
 
 export interface Artifact {
-  path: string; // relative to sandbox
+  path: string;
   type: 'file' | 'directory';
   content?: string;
 }
 
-export interface BuildResult {
+export interface TaskBuildResult {
   runId: string;
-  taskGraphId: string;
+  taskId: string;
   sandboxPath: string;
   artifacts: Artifact[];
   logs: string[];
@@ -36,34 +53,46 @@ export interface Issue {
   file?: string;
 }
 
-export interface QAResult {
+export interface TaskQAResult {
   runId: string;
+  taskId: string;
   passed: boolean;
   issues: Issue[];
-  delta: string; // targeted description of what's wrong/missing
+  delta: string;
 }
 
 export interface GateResult {
   runId: string;
   ciSignal: 'go' | 'no-go' | 'escalate';
   iteration: number;
-  delta?: string; // for builder on retry
-  diagnosis?: string; // for user on escalate
+  delta?: string;
+  diagnosis?: string;
   artifacts?: Artifact[];
 }
 
-export interface PlanRequest {
-  runId: string;
-  plan: string;
+// Board integration
+export interface BoardCard {
+  id?: string;
+  title: string;
+  description: string;
+  status: 'BACKLOG' | 'IN_PROGRESS' | 'QA' | 'DONE' | 'FAILED';
+  runId?: string;
+  phaseId?: string;
+  taskId?: string;
+}
+
+export interface BoardEvent {
+  cardId: string;
+  message: string;
+  type: 'INFO' | 'SUCCESS' | 'ERROR' | 'PROGRESS';
 }
 
 export interface PipelineState {
   runId: string;
   plan: string;
-  taskGraph?: TaskGraph;
-  buildResult?: BuildResult;
-  qaResult?: QAResult;
-  gateResult?: GateResult;
+  projectPlan?: ProjectPlan;
+  currentPhase?: string;
+  currentTask?: string;
   iteration: number;
   status: 'pending' | 'planning' | 'building' | 'qa' | 'gate' | 'done' | 'failed';
 }

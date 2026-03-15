@@ -6,38 +6,55 @@ export interface Task {
   acceptanceCriteria: string[];
 }
 
-export interface TaskGraph {
+export interface Phase {
   id: string;
-  originalPlan: string;
+  name: string;
+  description: string;
   tasks: Task[];
-  constraints: string[];
-  context: Record<string, unknown>;
+  dependencies: string[];
+}
+
+export interface ArchitectureDoc {
+  overview: string;
+  techStack: string;
+  fileStructure: string;
+  conventions: string;
+  resolvedAmbiguities: string[];
+  notes: string;
 }
 
 export interface Artifact {
-  path: string; // relative to sandbox
+  path: string;
   type: 'file' | 'directory';
   content?: string;
 }
 
-export interface BuildResult {
+export interface TaskBuildRequest {
   runId: string;
-  taskGraphId: string;
+  task: Task;
+  phase: Phase;
+  architecture: ArchitectureDoc;
+  constraints: string[];
+  sandboxPath?: string;
+  completedTasks: string[];
+}
+
+export interface TaskBuildResult {
+  runId: string;
+  taskId: string;
   sandboxPath: string;
   artifacts: Artifact[];
   logs: string[];
   success: boolean;
 }
 
-export interface BuildRequest {
+export interface TaskFixRequest {
   runId: string;
-  taskGraph: TaskGraph;
-}
-
-export interface FixRequest {
-  runId: string;
-  taskGraph: TaskGraph;
-  previousBuildResult: BuildResult;
+  task: Task;
+  phase: Phase;
+  architecture: ArchitectureDoc;
+  constraints: string[];
+  previousBuildResult: TaskBuildResult;
   delta: string;
   iteration: number;
 }

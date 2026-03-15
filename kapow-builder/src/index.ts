@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { build, fix } from './builder.js';
-import type { BuildRequest, FixRequest } from './types.js';
+import { buildTask, fixTask } from './builder.js';
+import type { TaskBuildRequest, TaskFixRequest } from './types.js';
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -11,22 +11,27 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'kapow-builder' });
 });
 
-app.post('/build', async (req: Request, res: Response, next: NextFunction) => {
+// Per-task build endpoint
+app.post('/build-task', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { runId, taskGraph } = req.body as BuildRequest;
+    const body = req.body as TaskBuildRequest;
 
-    if (!runId || typeof runId !== 'string') {
+    if (!body.runId || typeof body.runId !== 'string') {
       res.status(400).json({ error: 'runId is required' });
       return;
     }
-    if (!taskGraph || !taskGraph.tasks) {
-      res.status(400).json({ error: 'taskGraph is required' });
+    if (!body.task || !body.task.id) {
+      res.status(400).json({ error: 'task is required' });
+      return;
+    }
+    if (!body.phase || !body.architecture) {
+      res.status(400).json({ error: 'phase and architecture are required' });
       return;
     }
 
-    console.log(`[${runId}] Building ${taskGraph.tasks.length} tasks...`);
-    const result = await build(runId, taskGraph);
-    console.log(`[${runId}] Build complete. ${result.artifacts.length} artifacts. Success: ${result.success}`);
+    console.log(`[${body.runId}] Building task ${body.task.id}...`);
+    const result = await buildTask(body);
+    console.log(`[${body.runId}] Task ${body.task.id} complete. Success: ${result.success}`);
 
     res.json(result);
   } catch (err) {
@@ -34,22 +39,23 @@ app.post('/build', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-app.post('/fix', async (req: Request, res: Response, next: NextFunction) => {
+// Per-task fix endpoint
+app.post('/fix-task', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { runId, taskGraph, previousBuildResult, delta, iteration } = req.body as FixRequest;
+    const body = req.body as TaskFixRequest;
 
-    if (!runId || typeof runId !== 'string') {
+    if (!body.runId || typeof body.runId !== 'string') {
       res.status(400).json({ error: 'runId is required' });
       return;
     }
-    if (!taskGraph || !previousBuildResult || !delta) {
-      res.status(400).json({ error: 'taskGraph, previousBuildResult, and delta are required' });
+    if (!body.task || !body.previousBuildResult || !body.delta) {
+      res.status(400).json({ error: 'task, previousBuildResult, and delta are required' });
       return;
     }
 
-    console.log(`[${runId}] Fixing (iteration ${iteration})...`);
-    const result = await fix(runId, taskGraph, previousBuildResult, delta, iteration);
-    console.log(`[${runId}] Fix complete. ${result.artifacts.length} artifacts.`);
+    console.log(`[${body.runId}] Fixing task ${body.task.id} (iteration ${body.iteration})...`);
+    const result = await fixTask(body);
+    console.log(`[${body.runId}] Task ${body.task.id} fix complete.`);
 
     res.json(result);
   } catch (err) {
@@ -62,6 +68,11 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Builder error:', err);
   res.status(500).json({ error: err.message });
 });
+
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error('FATAL: ANTHROPIC_API_KEY is required');
+  process.exit(1);
+}
 
 app.listen(PORT, () => {
   console.log(`kapow-builder listening on port ${PORT}`);

@@ -1,16 +1,26 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
-import type { TaskGraph, BuildResult, QAResult, Issue } from './types.js';
+import type { TaskQARequest, TaskQAResult, TaskBuildResult, Issue, Task, ArchitectureDoc } from './types.js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const SYSTEM_PROMPT = `You are the QA — a meticulous engineer whose entire purpose is to find what is broken, wrong, or missing.
+function buildQAPrompt(architecture: ArchitectureDoc): string {
+  return `You are the QA — a meticulous engineer whose entire purpose is to find what is broken, wrong, or missing.
 
 You have a reputation: nothing gets past you. You read every file, cross-reference every acceptance criterion, and trace every code path. You do not assume things work — you look for proof. If there is no evidence that a criterion is met, it is not met.
 
+=== ARCHITECTURE DOCUMENT ===
+Overview: ${architecture.overview}
+Tech Stack: ${architecture.techStack}
+File Structure: ${architecture.fileStructure}
+Conventions: ${architecture.conventions}
+=== END ARCHITECTURE ===
+
+You are testing a SINGLE TASK — not the whole project. Focus only on this task's acceptance criteria, but also check that the implementation follows the architecture document.
+
 Your approach:
-1. SYSTEMATIC VERIFICATION. Go through every task in the task graph. For each acceptance criterion, find concrete evidence in the artifacts or build logs that it is satisfied. No evidence = critical issue.
+1. SYSTEMATIC VERIFICATION. For each acceptance criterion, find concrete evidence in the artifacts or build logs that it is satisfied. No evidence = critical issue.
 
 2. READ THE CODE, NOT JUST THE STRUCTURE. File existing is not the same as file correct. Check logic, not just presence. If a task says "validate email format", find the validation code and check if it actually works — a regex that allows "not@an@email" is a major issue even though the validator function exists.
 
@@ -25,11 +35,7 @@ Your approach:
 
    Reference specific files, functions, line numbers, and variable names. Explain what is wrong AND what the fix should be. The Builder should not have to guess.
 
-5. CROSS-CUTTING CONCERNS. After checking individual tasks, look for issues that span the whole build:
-   - Are there unhandled promise rejections?
-   - Are env vars referenced but never validated at startup?
-   - Are there obvious security issues (SQL injection, XSS, path traversal)?
-   - Does the build actually compile/run based on the logs?
+5. ARCHITECTURE COMPLIANCE. Check that the implementation follows the architecture document — correct file paths, naming conventions, tech stack choices. Flag deviations as major issues.
 
 Respond ONLY with a valid JSON object:
 {
@@ -37,7 +43,7 @@ Respond ONLY with a valid JSON object:
   "issues": [
     {
       "severity": "critical" | "major" | "minor",
-      "taskId": "task_1",
+      "taskId": "the_task_id",
       "description": "...",
       "file": "optional/path/to/file.ts"
     }
@@ -47,10 +53,11 @@ Respond ONLY with a valid JSON object:
 
 passed = true ONLY if there are zero critical and zero major issues.
 Do not include markdown, code fences, or any text outside the JSON object.`;
+}
 
 function readArtifactContents(
   sandboxPath: string,
-  artifacts: BuildResult['artifacts']
+  artifacts: TaskBuildResult['artifacts']
 ): string {
   const lines: string[] = [];
   for (const artifact of artifacts) {
@@ -68,7 +75,6 @@ function readArtifactContents(
     }
     try {
       const content = readFileSync(fullPath, 'utf-8');
-      // Truncate very large files
       const truncated = content.length > 3000 ? content.slice(0, 3000) + '\n... (truncated)' : content;
       lines.push(`--- ${artifact.path} ---`);
       lines.push(truncated);
@@ -79,32 +85,20 @@ function readArtifactContents(
   return lines.join('\n');
 }
 
-export async function runQA(
-  runId: string,
-  taskGraph: TaskGraph,
-  buildResult: BuildResult
-): Promise<QAResult> {
+export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
+  const { task, phase, architecture, buildResult } = req;
   const artifactContents = readArtifactContents(buildResult.sandboxPath, buildResult.artifacts);
 
   const userContent = [
-    `Run ID: ${runId}`,
-    `Task Graph ID: ${taskGraph.id}`,
+    `Run ID: ${req.runId}`,
+    `Task ID: ${task.id}`,
     '',
-    '=== TASK GRAPH ===',
+    `=== TASK UNDER TEST ===`,
     '',
-    'Original Plan:',
-    taskGraph.originalPlan,
-    '',
-    'Constraints:',
-    ...taskGraph.constraints.map((c) => `- ${c}`),
-    '',
-    'Tasks and Acceptance Criteria:',
-    ...taskGraph.tasks.map(
-      (t) =>
-        `\n[${t.id}] (${t.type}) ${t.description}\n` +
-        `  Acceptance Criteria:\n` +
-        t.acceptanceCriteria.map((c) => `    - ${c}`).join('\n')
-    ),
+    `Phase: ${phase.name} — ${phase.description}`,
+    `Task: [${task.id}] (${task.type}) ${task.description}`,
+    '  Acceptance Criteria:',
+    ...task.acceptanceCriteria.map((c) => `    - ${c}`),
     '',
     '=== BUILD RESULT ===',
     '',
@@ -112,8 +106,8 @@ export async function runQA(
     `Artifacts (${buildResult.artifacts.length}):`,
     ...buildResult.artifacts.map((a) => `  - ${a.path} (${a.type})`),
     '',
-    'Build Logs (last 50 entries):',
-    ...buildResult.logs.slice(-50).map((l) => `  ${l}`),
+    'Build Logs (last 30 entries):',
+    ...buildResult.logs.slice(-30).map((l) => `  ${l}`),
     '',
     '=== ARTIFACT CONTENTS ===',
     '',
@@ -123,7 +117,7 @@ export async function runQA(
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: buildQAPrompt(architecture),
     messages: [{ role: 'user', content: userContent }],
   });
 
@@ -144,7 +138,8 @@ export async function runQA(
   }
 
   return {
-    runId,
+    runId: req.runId,
+    taskId: task.id,
     passed: parsed.passed ?? false,
     issues: parsed.issues ?? [],
     delta: parsed.delta ?? '',

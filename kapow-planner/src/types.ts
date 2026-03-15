@@ -2,16 +2,33 @@ export interface Task {
   id: string;
   description: string;
   type: 'code' | 'shell' | 'browser' | 'file' | 'api';
-  dependencies: string[];
+  dependencies: string[]; // task IDs within same phase
   acceptanceCriteria: string[];
 }
 
-export interface TaskGraph {
+export interface Phase {
   id: string;
-  originalPlan: string;
+  name: string;
+  description: string;
   tasks: Task[];
+  dependencies: string[]; // phase IDs that must complete first
+}
+
+export interface ArchitectureDoc {
+  overview: string;
+  techStack: string;
+  fileStructure: string;
+  conventions: string;
+  resolvedAmbiguities: string[];
+  notes: string;
+}
+
+export interface ProjectPlan {
+  id: string;
+  originalBrief: string;
+  phases: Phase[];
   constraints: string[];
-  context: Record<string, unknown>;
+  architecture: ArchitectureDoc;
 }
 
 export interface PlanRequest {
@@ -21,5 +38,5 @@ export interface PlanRequest {
 
 export interface PlanResponse {
   runId: string;
-  taskGraph: TaskGraph;
+  projectPlan: ProjectPlan;
 }
