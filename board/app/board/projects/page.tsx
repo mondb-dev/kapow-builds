@@ -54,9 +54,10 @@ export default async function ProjectsPage() {
         ) : (
           <div className="space-y-3">
             {projects.map((project) => (
-              <div
+              <Link
                 key={project.id}
-                className="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 transition-colors"
+                href={`/board/projects/${project.id}`}
+                className="block bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-blue-500/50 transition-colors"
               >
                 <div className="flex items-start justify-between">
                   <div>
@@ -72,13 +73,11 @@ export default async function ProjectsPage() {
                 </div>
                 <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
                   {project.repoUrl && (
-                    <a href={project.repoUrl} target="_blank" rel="noopener" className="hover:text-blue-400">
-                      Repository ↗
-                    </a>
+                    <span className="hover:text-blue-400">Repository ↗</span>
                   )}
                   <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
