@@ -160,6 +160,28 @@ export default async function ProjectDetailPage({ params }: Params) {
       </header>
 
       <main className="max-w-4xl mx-auto p-6 space-y-8">
+        {/* Quick Actions */}
+        <div className="flex gap-3">
+          <Link
+            href={`/board/projects/${project.id}/kanban`}
+            className="flex-1 bg-blue-600/10 border border-blue-600/30 hover:border-blue-500 rounded-lg p-4 text-center transition-colors"
+          >
+            <div className="text-blue-400 font-medium">Open Board</div>
+            <div className="text-xs text-gray-500 mt-1">{project._count.cards} cards</div>
+          </Link>
+          {project.repoUrl && (
+            <a
+              href={project.repoUrl}
+              target="_blank"
+              rel="noopener"
+              className="flex-1 bg-gray-800/50 border border-gray-700 hover:border-gray-500 rounded-lg p-4 text-center transition-colors"
+            >
+              <div className="text-gray-300 font-medium">GitHub ↗</div>
+              <div className="text-xs text-gray-500 mt-1">View repository</div>
+            </a>
+          )}
+        </div>
+
         {/* Name */}
         <section>
           <label className="text-xs text-gray-500 uppercase tracking-wide">Project Name</label>
