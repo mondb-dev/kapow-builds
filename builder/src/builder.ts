@@ -2,12 +2,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readdirSync, lstatSync, existsSync } from 'fs';
 import { join, relative } from 'path';
 import { createSandbox } from './sandbox.js';
-import { shellExec } from './tools/shell.js';
-import { fileWrite, fileRead, fileList } from './tools/files.js';
-import { gitInit, gitCommit, githubCreateRepo } from './tools/git.js';
-import { browserNavigate, browserScreenshot } from './tools/browser.js';
-import { vercelDeploy, netlifyDeploy } from './tools/deploy.js';
+import { gitInit } from './tools/git.js';
+import { dispatchTool, registeredTools } from './tool-dispatch.js';
+import { registerCoreTools } from './tool-registration.js';
 import type { TaskBuildRequest, TaskBuildResult, TaskFixRequest, Artifact, ArchitectureDoc, Task, Phase, AvailableTool } from './types.js';
+
+// Register core tools on module load
+registerCoreTools();
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -119,76 +120,14 @@ function getDefaultTools(): AvailableTool[] {
   ];
 }
 
-// ── Tool execution (dispatches to local implementations) ─────────────
+// ── Tool execution (dynamic dispatch via registry) ───────────────────
 
 async function handleToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
   sandboxPath: string
 ): Promise<string> {
-  try {
-    switch (toolName) {
-      case 'shell_exec': {
-        const { command, timeout_ms } = toolInput as { command: string; timeout_ms?: number };
-        const result = await shellExec(command, sandboxPath, timeout_ms);
-        return JSON.stringify({
-          stdout: result.stdout.slice(0, 8000),
-          stderr: result.stderr.slice(0, 2000),
-          exitCode: result.exitCode,
-        });
-      }
-      case 'file_write': {
-        const { path, content } = toolInput as { path: string; content: string };
-        fileWrite(sandboxPath, path, content);
-        return `File written: ${path}`;
-      }
-      case 'file_read': {
-        const { path } = toolInput as { path: string };
-        const content = fileRead(sandboxPath, path);
-        return content.slice(0, 10000);
-      }
-      case 'file_list': {
-        const { path = '.' } = toolInput as { path?: string };
-        const entries = fileList(sandboxPath, path);
-        return JSON.stringify(entries);
-      }
-      case 'git_commit': {
-        const { message } = toolInput as { message: string };
-        return await gitCommit(sandboxPath, message);
-      }
-      case 'github_create_repo': {
-        const { repo_name, description, private: isPrivate = false } = toolInput as {
-          repo_name: string; description: string; private?: boolean;
-        };
-        return githubCreateRepo(sandboxPath, repo_name, description, isPrivate);
-      }
-      case 'vercel_deploy': {
-        const { project_name, build_command, output_dir } = toolInput as {
-          project_name: string; build_command?: string; output_dir?: string;
-        };
-        return vercelDeploy(sandboxPath, project_name, build_command, output_dir);
-      }
-      case 'netlify_deploy': {
-        const { site_id, publish_dir = '.' } = toolInput as {
-          site_id?: string; publish_dir?: string;
-        };
-        return netlifyDeploy(sandboxPath, site_id, publish_dir);
-      }
-      case 'browser_navigate': {
-        const { url } = toolInput as { url: string };
-        return browserNavigate(url);
-      }
-      case 'browser_screenshot': {
-        const { filename } = toolInput as { filename: string };
-        return browserScreenshot(sandboxPath, filename);
-      }
-      default:
-        return `Unknown tool: ${toolName}. This tool is registered but has no local implementation. Request it from the technician.`;
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return `Tool error (${toolName}): ${msg}`;
-  }
+  return dispatchTool(toolName, toolInput, sandboxPath);
 }
 
 const MAX_WALK_DEPTH = 10;

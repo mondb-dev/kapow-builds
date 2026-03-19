@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { TaskQARequest, TaskQAResult, Issue, ArchitectureDoc, AvailableTool } from './types.js';
-import { shellExec } from './tools/shell.js';
-import { fileRead, fileList } from './tools/files.js';
+import { dispatchTool, allowedTools, registerCoreQATools } from './tool-dispatch.js';
+
+// Register core tools on module load
+registerCoreQATools();
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -115,34 +117,7 @@ async function handleToolCall(
   toolInput: Record<string, unknown>,
   sandboxPath: string
 ): Promise<string> {
-  try {
-    switch (toolName) {
-      case 'shell_exec': {
-        const { command, timeout_ms } = toolInput as { command: string; timeout_ms?: number };
-        const result = await shellExec(command, sandboxPath, timeout_ms);
-        return JSON.stringify({
-          stdout: result.stdout.slice(0, 8000),
-          stderr: result.stderr.slice(0, 2000),
-          exitCode: result.exitCode,
-        });
-      }
-      case 'file_read': {
-        const { path } = toolInput as { path: string };
-        const content = fileRead(sandboxPath, path);
-        return content.slice(0, 10000);
-      }
-      case 'file_list': {
-        const { path = '.' } = toolInput as { path?: string };
-        const entries = fileList(sandboxPath, path);
-        return JSON.stringify(entries);
-      }
-      default:
-        return `Unknown tool: ${toolName}`;
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return `Tool error (${toolName}): ${msg}`;
-  }
+  return dispatchTool(toolName, toolInput, sandboxPath);
 }
 
 export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {

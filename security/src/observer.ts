@@ -7,15 +7,40 @@ export interface ServiceEndpoint {
   port: number;
 }
 
-const DEFAULT_SERVICES: ServiceEndpoint[] = [
-  { name: 'actions', url: process.env.ACTIONS_URL ?? 'http://localhost:3000', port: 3000 },
-  { name: 'planner', url: process.env.PLANNER_URL ?? 'http://localhost:3001', port: 3001 },
-  { name: 'builder', url: process.env.BUILDER_URL ?? 'http://localhost:3002', port: 3002 },
-  { name: 'qa', url: process.env.QA_URL ?? 'http://localhost:3003', port: 3003 },
-  { name: 'gate', url: process.env.GATE_URL ?? 'http://localhost:3004', port: 3004 },
-  { name: 'board', url: process.env.BOARD_URL ?? 'http://localhost:3005', port: 3005 },
-  { name: 'technician', url: process.env.TECHNICIAN_URL ?? 'http://localhost:3006', port: 3006 },
-];
+/**
+ * Service list is configurable via KAPOW_SERVICES env var (JSON array).
+ * Falls back to defaults based on individual *_URL env vars.
+ *
+ * To add a new service to monitoring:
+ *   KAPOW_SERVICES='[{"name":"my-svc","url":"http://localhost:9000","port":9000}]'
+ *
+ * Or just set the env var (e.g. MY_SVC_URL) and add it to the defaults below.
+ */
+function loadServices(): ServiceEndpoint[] {
+  const custom = process.env.KAPOW_SERVICES;
+  if (custom) {
+    try {
+      const parsed = JSON.parse(custom) as ServiceEndpoint[];
+      console.log(`[security] Loaded ${parsed.length} services from KAPOW_SERVICES`);
+      return parsed;
+    } catch {
+      console.warn('[security] Invalid KAPOW_SERVICES JSON, using defaults');
+    }
+  }
+
+  return [
+    { name: 'actions',    url: process.env.ACTIONS_URL    ?? 'http://localhost:3000', port: 3000 },
+    { name: 'planner',    url: process.env.PLANNER_URL    ?? 'http://localhost:3001', port: 3001 },
+    { name: 'builder',    url: process.env.BUILDER_URL    ?? 'http://localhost:3002', port: 3002 },
+    { name: 'qa',         url: process.env.QA_URL         ?? 'http://localhost:3003', port: 3003 },
+    { name: 'gate',       url: process.env.GATE_URL       ?? 'http://localhost:3004', port: 3004 },
+    { name: 'board',      url: process.env.BOARD_URL      ?? 'http://localhost:3005', port: 3005 },
+    { name: 'technician', url: process.env.TECHNICIAN_URL ?? 'http://localhost:3006', port: 3006 },
+    { name: 'comms',      url: process.env.COMMS_URL      ?? 'http://localhost:3008', port: 3008 },
+  ];
+}
+
+const monitoredServices = loadServices();
 
 export async function checkServiceHealth(endpoint: ServiceEndpoint): Promise<ServiceHealth> {
   const start = Date.now();
@@ -42,7 +67,7 @@ export async function checkServiceHealth(endpoint: ServiceEndpoint): Promise<Ser
 }
 
 export async function checkAllServices(): Promise<ServiceHealth[]> {
-  return Promise.all(DEFAULT_SERVICES.map(checkServiceHealth));
+  return Promise.all(monitoredServices.map(checkServiceHealth));
 }
 
 // Periodic health monitor

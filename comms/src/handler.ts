@@ -7,6 +7,7 @@ import { detectIntent } from './intent.js';
 import {
   getConversation, createConversation, updateConversation, addMessage,
 } from './conversations.js';
+import { formatPlan, formatPrompt, type PlanData } from './channels/formatter.js';
 import type { ConversationState, UserIntent } from './types.js';
 
 const ACTIONS_URL = process.env.ACTIONS_URL ?? 'http://localhost:3000';
@@ -14,8 +15,11 @@ const PLANNER_URL = process.env.PLANNER_URL ?? 'http://localhost:3001';
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// ── Reply callback type (injected by Slack bot) ──────────────────────
+// ── Reply callback type (injected by channel adapter) ────────────────
 export type ReplyFn = (text: string) => Promise<void>;
+
+// ── Platform hint (set per-conversation for formatting) ──────────────
+export type Platform = 'slack' | 'discord' | 'plain';
 
 // ── Main entry point ─────────────────────────────────────────────────
 
@@ -26,6 +30,7 @@ export async function handleMessage(
   userName: string,
   text: string,
   reply: ReplyFn,
+  platform: Platform = 'plain',
 ): Promise<void> {
   // Get or create conversation
   let convo = await getConversation(channelId, threadTs);
@@ -41,14 +46,14 @@ export async function handleMessage(
   try {
     switch (convo.phase) {
       case 'idle':
-        await handleIdle(convo, intent, reply);
+        await handleIdle(convo, intent, reply, platform);
         break;
       case 'scoping':
       case 'planning':
         await reply("I'm still working on the plan, hang tight...");
         break;
       case 'negotiating':
-        await handleNegotiating(convo, intent, reply);
+        await handleNegotiating(convo, intent, reply, platform);
         break;
       case 'confirmed':
       case 'building':
@@ -56,7 +61,7 @@ export async function handleMessage(
         break;
       case 'done':
       case 'failed':
-        await handleCompleted(convo, intent, reply);
+        await handleCompleted(convo, intent, reply, platform);
         break;
     }
   } catch (err: unknown) {
@@ -75,6 +80,7 @@ async function handleIdle(
   convo: ConversationState,
   intent: UserIntent,
   reply: ReplyFn,
+  platform: Platform,
 ): Promise<void> {
   switch (intent.type) {
     case 'new_project': {
@@ -85,7 +91,7 @@ async function handleIdle(
       await updateConversation(convo);
 
       // Call planner asynchronously
-      await generatePlan(convo, reply);
+      await generatePlan(convo, reply, platform);
       break;
     }
     case 'list_projects': {
@@ -113,6 +119,7 @@ async function handleNegotiating(
   convo: ConversationState,
   intent: UserIntent,
   reply: ReplyFn,
+  platform: Platform,
 ): Promise<void> {
   switch (intent.type) {
     case 'approve': {
@@ -141,7 +148,7 @@ async function handleNegotiating(
       await reply('Got it, revising the plan with your changes...');
       await updateConversation(convo);
 
-      await generatePlan(convo, reply);
+      await generatePlan(convo, reply, platform);
       break;
     }
     case 'new_project': {
@@ -154,7 +161,7 @@ async function handleNegotiating(
       await reply('New scope received. Replanning...');
       await updateConversation(convo);
 
-      await generatePlan(convo, reply);
+      await generatePlan(convo, reply, platform);
       break;
     }
     default: {
@@ -195,6 +202,7 @@ async function handleCompleted(
   convo: ConversationState,
   intent: UserIntent,
   reply: ReplyFn,
+  platform: Platform,
 ): Promise<void> {
   if (intent.type === 'new_project') {
     // Reset and start over
@@ -207,7 +215,7 @@ async function handleCompleted(
     await reply('New project! Let me plan this out...');
     await updateConversation(convo);
 
-    await generatePlan(convo, reply);
+    await generatePlan(convo, reply, platform);
     return;
   }
 
@@ -217,7 +225,7 @@ async function handleCompleted(
 
 // ── Plan Generation ──────────────────────────────────────────────────
 
-async function generatePlan(convo: ConversationState, reply: ReplyFn): Promise<void> {
+async function generatePlan(convo: ConversationState, reply: ReplyFn, platform: Platform = 'plain'): Promise<void> {
   convo.phase = 'planning';
   await updateConversation(convo);
 
@@ -235,8 +243,8 @@ async function generatePlan(convo: ConversationState, reply: ReplyFn): Promise<v
     const projectPlan = planRes.data;
     convo.planDetail = projectPlan;
 
-    // Format plan for Slack
-    const formattedPlan = formatPlanForSlack(projectPlan);
+    // Format plan for the current platform
+    const formattedPlan = formatPlan(projectPlan as PlanData, platform);
     convo.plan = formattedPlan;
     convo.phase = 'negotiating';
 
@@ -245,7 +253,7 @@ async function generatePlan(convo: ConversationState, reply: ReplyFn): Promise<v
 
     addMessage(convo, 'kapow', formattedPlan);
     await reply(formattedPlan);
-    await reply('*What do you think?* Reply with:\n• *"go"* or *"approved"* to start building\n• Describe changes you want\n• *"cancel"* to scrap it');
+    await reply(formatPrompt(platform));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     convo.phase = 'idle';
@@ -254,51 +262,6 @@ async function generatePlan(convo: ConversationState, reply: ReplyFn): Promise<v
   }
 
   await updateConversation(convo);
-}
-
-function formatPlanForSlack(plan: {
-  architecture?: { overview?: string; techStack?: string; fileStructure?: string; conventions?: string };
-  phases?: Array<{ name: string; description: string; tasks: Array<{ description: string; acceptanceCriteria: string[] }> }>;
-  constraints?: string[];
-}): string {
-  const lines: string[] = [];
-
-  if (plan.architecture) {
-    const a = plan.architecture;
-    lines.push('*Architecture*');
-    if (a.overview) lines.push(`> ${a.overview}`);
-    if (a.techStack) lines.push(`\n*Tech Stack:* ${a.techStack}`);
-    if (a.fileStructure) lines.push(`*File Structure:* ${a.fileStructure}`);
-    lines.push('');
-  }
-
-  if (plan.phases && plan.phases.length > 0) {
-    lines.push(`*Phases (${plan.phases.length}):*`);
-    for (const phase of plan.phases) {
-      lines.push(`\n*${phase.name}* — ${phase.description}`);
-      for (const task of phase.tasks) {
-        lines.push(`  • ${task.description}`);
-        if (task.acceptanceCriteria.length > 0) {
-          for (const ac of task.acceptanceCriteria.slice(0, 3)) {
-            lines.push(`    ✓ ${ac}`);
-          }
-          if (task.acceptanceCriteria.length > 3) {
-            lines.push(`    _...and ${task.acceptanceCriteria.length - 3} more criteria_`);
-          }
-        }
-      }
-    }
-    lines.push('');
-  }
-
-  if (plan.constraints && plan.constraints.length > 0) {
-    lines.push('*Constraints:*');
-    for (const c of plan.constraints) {
-      lines.push(`  ⚠ ${c}`);
-    }
-  }
-
-  return lines.join('\n');
 }
 
 // ── Pipeline Execution ───────────────────────────────────────────────
