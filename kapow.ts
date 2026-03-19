@@ -339,7 +339,12 @@ function startDev() {
   for (const svc of ALL_SERVICES) {
     const cwd = join(ROOT, svc.dir);
     if (svc.name === 'board') {
-      // Board is a Next.js app — use next dev
+      // Board is a Next.js app — needs .env symlinked from root
+      const boardEnv = join(ROOT, 'board', '.env');
+      if (!existsSync(boardEnv)) {
+        const { symlinkSync } = await import('fs');
+        try { symlinkSync(ENV_FILE, boardEnv); } catch { /* already exists */ }
+      }
       startBackground(svc.name, cwd, 'npx', ['next', 'dev', '-p', String(svc.port)], {
         PORT: String(svc.port),
       });
