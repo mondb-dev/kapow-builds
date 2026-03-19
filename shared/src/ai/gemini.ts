@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, type Content, type Part, type FunctionDeclaration, type Tool } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType, type Content, type Part, type FunctionDeclaration, type Tool } from '@google/generative-ai';
 import type { AIProvider, AIMessage, AIToolDef, AIResponse, AIContentBlock } from './types.js';
 
 export class GeminiProvider implements AIProvider {
@@ -25,15 +25,15 @@ export class GeminiProvider implements AIProvider {
             name: t.name,
             description: t.description,
             parameters: {
-              type: 'object' as const,
+              type: SchemaType.OBJECT,
               properties: Object.fromEntries(
                 Object.entries(t.input_schema.properties).map(([k, v]) => [
                   k,
-                  { type: v.type, description: v.description },
+                  { type: v.type as SchemaType, description: v.description },
                 ])
               ),
               required: t.input_schema.required,
-            },
+            } as unknown as FunctionDeclaration['parameters'],
           })),
         }]
       : undefined;

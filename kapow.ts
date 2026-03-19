@@ -4,7 +4,7 @@
  * Usage: npx tsx kapow.ts <command>
  */
 import { spawn, execSync, type ChildProcess } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, copyFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, copyFileSync, openSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -101,15 +101,15 @@ function isRunning(pid: number): boolean {
   }
 }
 
-function startBackground(name: string, cwd: string, cmd: string, args: string[]): ChildProcess {
+function startBackground(name: string, cwd: string, cmd: string, args: string[], extraEnv?: Record<string, string>): ChildProcess {
   mkdirSync(LOG_DIR, { recursive: true });
 
-  const out = require('fs').openSync(logFile(name), 'w');
+  const out = openSync(logFile(name), 'w');
   const child = spawn(cmd, args, {
     cwd,
     stdio: ['ignore', out, out],
     detached: true,
-    env: { ...process.env },
+    env: { ...process.env, ...extraEnv },
   });
 
   child.unref();
@@ -338,7 +338,16 @@ function startDev() {
 
   for (const svc of ALL_SERVICES) {
     const cwd = join(ROOT, svc.dir);
-    startBackground(svc.name, cwd, 'npx', ['tsx', 'src/index.ts']);
+    if (svc.name === 'board') {
+      // Board is a Next.js app — use next dev
+      startBackground(svc.name, cwd, 'npx', ['next', 'dev', '-p', String(svc.port)], {
+        PORT: String(svc.port),
+      });
+    } else {
+      startBackground(svc.name, cwd, 'npx', ['tsx', 'src/index.ts'], {
+        PORT: String(svc.port),
+      });
+    }
     console.log(`  kapow-${svc.name.padEnd(12)} → http://localhost:${svc.port}`);
   }
 

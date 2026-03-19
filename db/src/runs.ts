@@ -37,21 +37,23 @@ export async function updateRunStatus(id: string, status: RunStatus, result?: un
     where: { id },
     data: {
       status: STATUS_TO_PRISMA[status],
-      ...(result !== undefined ? { result: result as Record<string, unknown> } : {}),
+      ...(result !== undefined ? { result: JSON.parse(JSON.stringify(result)) } : {}),
     },
   });
 }
 
 export async function getRun(id: string): Promise<RunRecord | null> {
-  return prisma.run.findUnique({ where: { id } });
+  const row = await prisma.run.findUnique({ where: { id } });
+  return row as unknown as RunRecord | null;
 }
 
 export async function getProjectRuns(projectId: string, limit = 20): Promise<RunRecord[]> {
-  return prisma.run.findMany({
+  const rows = await prisma.run.findMany({
     where: { projectId },
     orderBy: { createdAt: 'desc' },
     take: limit,
   });
+  return rows as unknown as RunRecord[];
 }
 
 // ── Run Logs ─────────────────────────────────────────────────────────
@@ -69,7 +71,7 @@ export async function addRunLog(
       service,
       message,
       level: LEVEL_TO_PRISMA[level],
-      metadata: metadata ?? undefined,
+      metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : undefined,
     },
   });
 }

@@ -5,6 +5,16 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js",
+    "./tools": "./dist/tools.js",
+    "./recipes": "./dist/recipes.js",
+    "./preferences": "./dist/preferences.js",
+    "./security": "./dist/security.js",
+    "./projects": "./dist/projects.js",
+    "./runs": "./dist/runs.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

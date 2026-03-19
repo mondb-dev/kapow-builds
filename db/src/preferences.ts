@@ -34,8 +34,8 @@ export async function getGlobalPreferences(): Promise<Preferences> {
 export async function upsertGlobalPreference(category: string, settings: PreferenceSet): Promise<void> {
   await prisma.preference.upsert({
     where: { id: category },
-    create: { id: category, category, settings },
-    update: { settings },
+    create: { id: category, category, settings: JSON.parse(JSON.stringify(settings)) },
+    update: { settings: JSON.parse(JSON.stringify(settings)) },
   });
 }
 
@@ -74,9 +74,9 @@ export async function upsertProjectPreference(
       projectId,
       preferenceId: globalPref?.id,
       category,
-      settings,
+      settings: JSON.parse(JSON.stringify(settings)),
     },
-    update: { settings },
+    update: { settings: JSON.parse(JSON.stringify(settings)) },
   });
 }
 
