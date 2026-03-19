@@ -40,7 +40,11 @@ export async function createGitHubRepo(
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
+      const err = await res.json().catch(() => ({})) as { errors?: Array<{ message: string }> };
+      // If repo already exists, look it up
+      if (res.status === 422 && err.errors?.some((e) => e.message?.includes('already exists'))) {
+        return await lookupRepo(slug);
+      }
       console.error(`GitHub repo creation failed: ${res.status}`, err);
       return null;
     }
@@ -52,6 +56,27 @@ export async function createGitHubRepo(
     };
   } catch (err) {
     console.error('GitHub repo creation error:', err);
+    return null;
+  }
+}
+
+async function lookupRepo(name: string): Promise<{ repoUrl: string; cloneUrl: string } | null> {
+  if (!GITHUB_TOKEN) return null;
+  try {
+    // Get authenticated user first
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' },
+    });
+    if (!userRes.ok) return null;
+    const user = await userRes.json() as { login: string };
+
+    const repoRes = await fetch(`https://api.github.com/repos/${user.login}/${name}`, {
+      headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' },
+    });
+    if (!repoRes.ok) return null;
+    const repo = await repoRes.json() as { html_url: string; clone_url: string };
+    return { repoUrl: repo.html_url, cloneUrl: repo.clone_url };
+  } catch {
     return null;
   }
 }

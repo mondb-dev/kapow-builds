@@ -55,9 +55,13 @@ async function updateRepoUrl(formData: FormData) {
   const repoUrl = formData.get('repoUrl') as string;
   if (!id) return;
 
+  const url = repoUrl?.trim() || null;
+  // Validate: must be empty (unlink) or a valid URL
+  if (url && !url.startsWith('https://')) return;
+
   await db.project.update({
     where: { id },
-    data: { repoUrl: repoUrl?.trim() || null },
+    data: { repoUrl: url },
   });
 
   revalidatePath(`/board/projects/${id}`);
