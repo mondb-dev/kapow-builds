@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "kapow": "tsx kapow.ts",
+    "setup": "tsx kapow.ts setup",
     "install:all": "tsx kapow.ts install",
     "dev": "tsx kapow.ts dev",
     "build": "tsx kapow.ts build",
