@@ -1,3 +1,5 @@
+import type { AlertRecord, AuditRecord } from 'kapow-db/security';
+
 // ── Alert Types ──────────────────────────────────────────────────────
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
@@ -13,26 +15,28 @@ export type AlertCategory =
 
 export interface SecurityAlert {
   id: string;
-  runId?: string;
+  runId: string | null;
+  projectId: string | null;
   service: string;
   severity: AlertSeverity;
-  category: AlertCategory;
+  category: string;
   message: string;
   details: string;
-  timestamp: string;
   acknowledged: boolean;
+  createdAt: Date;
 }
 
 // ── Audit Log Types ──────────────────────────────────────────────────
 
 export interface AuditEntry {
   id: string;
-  timestamp: string;
-  runId?: string;
+  runId: string | null;
+  projectId: string | null;
   service: string;
   action: string;
   details: string;
   riskScore: number;           // 0-100, higher = riskier
+  createdAt: Date;
 }
 
 // ── Service Health Types ─────────────────────────────────────────────
@@ -75,8 +79,8 @@ export interface PipelineEvent {
 
 export interface SecurityDashboard {
   services: ServiceHealth[];
-  recentAlerts: SecurityAlert[];
-  auditLog: AuditEntry[];
+  recentAlerts: AlertRecord[];
+  auditLog: AuditRecord[];
   overallRisk: 'low' | 'medium' | 'high';
   stats: {
     totalAlerts: number;

@@ -9,7 +9,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID!,
       clientSecret: process.env.AUTH_GITHUB_SECRET!,
-      profile(profile) {
+      profile(profile: { id: number; name: string | null; login: string; email: string | null; avatar_url: string }) {
         return {
           id: profile.id.toString(),
           name: profile.name ?? profile.login,

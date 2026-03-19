@@ -234,7 +234,7 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
             </div>
           )}
 
-          {card.assigneeType === 'HUMAN' && card.assigneeId !== currentUserId && (
+          {card.assigneeType === 'HUMAN' && card.assignee?.id !== currentUserId && (
             <button
               onClick={() => handleAssign('HUMAN')}
               disabled={assigning}

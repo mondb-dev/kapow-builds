@@ -1,16 +1,17 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
 import { runPipeline } from './orchestrator.js';
+import { addRunLog, getRunLogs } from 'kapow-db/runs';
 
 export interface RunEntry {
   status: 'running' | 'done' | 'failed';
   messages: string[];
   result?: unknown;
   createdAt: number;
-  // SSE subscribers waiting for this run
   subscribers: Set<ServerResponse>;
 }
 
+// In-memory for SSE subscriber tracking only. Messages are also persisted to DB.
 export const runLog = new Map<string, RunEntry>();
 
 // Cleanup entries older than 1 hour, every 5 minutes
@@ -118,11 +119,13 @@ async function handlePipeline(req: IncomingMessage, res: ServerResponse) {
   // Respond immediately with runId
   sendJson(res, 202, { runId }, req);
 
-  // Run pipeline asynchronously — broadcast progress to SSE subscribers
+  // Run pipeline asynchronously — broadcast to SSE + persist to DB
   const onProgress = (msg: string) => {
     messages.push(msg);
     process.stderr.write(msg + '\n');
     broadcastToRun(runId, { type: 'progress', message: msg, runId });
+    // Persist to DB (fire-and-forget)
+    addRunLog(runId, 'actions', msg, 'info').catch(() => {});
   };
 
   onProgress(`[${runId}] Pipeline started.`);
@@ -153,17 +156,32 @@ async function handlePipeline(req: IncomingMessage, res: ServerResponse) {
     });
 }
 
-function handleRunStatus(req: IncomingMessage, res: ServerResponse, runId: string) {
+async function handleRunStatus(req: IncomingMessage, res: ServerResponse, runId: string) {
   if (!isValidRunId(runId)) {
     sendJson(res, 400, { error: 'Invalid runId' }, req);
     return;
   }
+
+  // Check in-memory first (live runs)
   const entry = runLog.get(runId);
-  if (!entry) {
-    sendJson(res, 404, { error: `No run found: ${runId}` }, req);
+  if (entry) {
+    sendJson(res, 200, { status: entry.status, messages: entry.messages }, req);
     return;
   }
-  sendJson(res, 200, { status: entry.status, messages: entry.messages }, req);
+
+  // Fall back to DB (survives restarts)
+  try {
+    const logs = await getRunLogs(runId);
+    if (logs.length > 0) {
+      sendJson(res, 200, {
+        status: 'unknown',
+        messages: logs.map((l) => l.message),
+      }, req);
+      return;
+    }
+  } catch { /* DB unavailable */ }
+
+  sendJson(res, 404, { error: `No run found: ${runId}` }, req);
 }
 
 function handleRunStream(req: IncomingMessage, res: ServerResponse, runId: string) {

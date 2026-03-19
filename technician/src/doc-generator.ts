@@ -25,7 +25,7 @@ Documentation rules:
 
 export async function generateDoc(tool: ToolDefinition): Promise<ToolDoc> {
   // Get existing tools for relatedTools references
-  const allTools = loadTools().filter((t) => t.status === 'ready' && t.id !== tool.id);
+  const allTools = (await loadTools()).filter((t) => t.status === 'ready' && t.id !== tool.id);
   const toolIndex = allTools.map((t) => `[${t.id}] ${t.name}: ${t.description}`).join('\n');
 
   const response = await provider.chat({

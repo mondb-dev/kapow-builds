@@ -54,7 +54,7 @@ export async function scanContent(request: ScanRequest): Promise<ScanResult> {
   // Persist any alerts found
   const persistedAlerts: SecurityAlert[] = [];
   for (const alert of result.alerts ?? []) {
-    const persisted = createAlert(
+    const persisted = await createAlert(
       request.service ?? 'scanner',
       alert.severity,
       alert.category,

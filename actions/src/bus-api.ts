@@ -110,17 +110,19 @@ export function mountBusAPI(app: express.Express): void {
     ensureAgent(agent);
     const inbox = agentInboxes.get(agent) ?? [];
 
-    let messages: BusMessage[];
+    let startIdx: number;
     if (afterId) {
       const idx = inbox.findIndex((m) => m.id === afterId);
-      messages = idx >= 0 ? inbox.slice(idx + 1) : inbox;
+      startIdx = idx >= 0 ? idx + 1 : 0;
     } else {
-      messages = inbox;
+      startIdx = 0;
     }
 
-    // Clear delivered messages
+    const messages = inbox.slice(startIdx);
+
+    // Remove only delivered messages, keep undelivered ones
     if (messages.length > 0) {
-      agentInboxes.set(agent, []);
+      agentInboxes.set(agent, inbox.slice(startIdx + messages.length));
     }
 
     res.json(messages);

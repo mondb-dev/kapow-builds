@@ -13,12 +13,12 @@ export interface ToolParameter {
 
 export interface ToolDoc {
   summary: string;
-  usage: string;
-  parameters: string;
-  returns: string;
-  examples: string[];
-  caveats: string[];
-  relatedTools: string[];
+  usage?: string;
+  parameters?: string;
+  returns?: string;
+  examples?: string[];
+  caveats?: string[];
+  relatedTools?: string[];
 }
 
 export interface ToolRecord {

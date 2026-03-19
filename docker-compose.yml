@@ -3,6 +3,10 @@ version: "3.8"
 x-db-env: &db-env
   DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/kapow
 
+x-agent-build: &agent-build
+  context: .
+  dockerfile: Dockerfile.agent
+
 services:
   caddy:
     image: caddy:2-alpine
@@ -34,8 +38,8 @@ services:
 
   planner:
     build:
-      context: ./planner
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: planner }
     env_file: .env
     environment:
       - PORT=3001
@@ -45,8 +49,8 @@ services:
 
   builder:
     build:
-      context: ./builder
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: builder }
     env_file: .env
     environment:
       - PORT=3002
@@ -57,8 +61,8 @@ services:
 
   qa:
     build:
-      context: ./qa
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: qa }
     env_file: .env
     environment:
       - PORT=3003
@@ -69,8 +73,8 @@ services:
 
   gate:
     build:
-      context: ./gate
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: gate }
     env_file: .env
     environment:
       - PORT=3004
@@ -80,8 +84,8 @@ services:
 
   technician:
     build:
-      context: ./technician
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: technician }
     env_file: .env
     environment:
       <<: *db-env
@@ -94,8 +98,8 @@ services:
 
   comms:
     build:
-      context: ./comms
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: comms }
     env_file: .env
     environment:
       <<: *db-env
@@ -112,8 +116,8 @@ services:
 
   security:
     build:
-      context: ./security
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: security }
     env_file: .env
     environment:
       <<: *db-env
@@ -131,17 +135,12 @@ services:
     depends_on:
       - postgres
       - actions
-      - planner
-      - builder
-      - qa
-      - gate
-      - technician
     restart: unless-stopped
 
   actions:
     build:
-      context: ./actions
-      dockerfile: ../Dockerfile.agent
+      <<: *agent-build
+      args: { SERVICE: actions }
     env_file: .env
     environment:
       <<: *db-env
@@ -167,8 +166,8 @@ services:
 
   board:
     build:
-      context: ./board
-      dockerfile: ../Dockerfile.board
+      context: .
+      dockerfile: Dockerfile.board
     env_file: .env
     environment:
       <<: *db-env

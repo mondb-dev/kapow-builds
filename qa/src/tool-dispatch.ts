@@ -25,7 +25,7 @@ type ToolPermission = 'read' | 'write' | 'execute' | 'deploy';
 const toolPermissions = new Map<string, ToolPermission>();
 
 const allowedPermissions: Set<ToolPermission> = new Set(
-  (process.env.QA_TOOL_PERMISSIONS ?? 'read,execute')
+  (process.env.QA_TOOL_PERMISSIONS ?? 'read')
     .split(',')
     .map((s) => s.trim() as ToolPermission)
 );
@@ -71,13 +71,24 @@ export async function dispatchTool(
 export function registerCoreQATools(): void {
   registerTool('shell_exec', async (input, sandboxPath) => {
     const { command, timeout_ms } = input as { command: string; timeout_ms?: number };
+
+    // QA shell is read-only: block mutating commands
+    const blocked = /\b(rm|mv|cp|chmod|chown|mkdir|rmdir|touch|dd|mkfs|npm\s+install|npm\s+uninstall|git\s+push|git\s+commit|git\s+reset|file_write)\b/i;
+    if (blocked.test(command)) {
+      return JSON.stringify({
+        stdout: '',
+        stderr: `QA shell is read-only. Blocked command: ${command.slice(0, 100)}`,
+        exitCode: 1,
+      });
+    }
+
     const result = await shellExec(command, sandboxPath, timeout_ms);
     return JSON.stringify({
       stdout: result.stdout.slice(0, 8000),
       stderr: result.stderr.slice(0, 2000),
       exitCode: result.exitCode,
     });
-  }, 'execute');
+  }, 'read');
 
   registerTool('file_read', async (input, sandboxPath) => {
     const { path } = input as { path: string };

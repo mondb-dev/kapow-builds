@@ -18,14 +18,16 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   const { runId } = await params;
 
-  // Find the card associated with this runId
   const card = await db.card.findFirst({ where: { runId } });
   if (!card) {
     return new Response('No card found for this runId', { status: 404 });
   }
 
   const cardId = card.id;
-  let lastMessageCount = 0;
+
+  // Use existing event count as the watermark — prevents duplication on reconnect
+  const existingEventCount = await db.cardEvent.count({ where: { cardId } });
+  let lastMessageCount = existingEventCount;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -36,6 +38,15 @@ export async function GET(req: NextRequest, { params }: Params) {
       }
 
       send({ type: 'connected', runId });
+
+      // Send existing events to this viewer (read-only, no duplication)
+      const existingEvents = await db.cardEvent.findMany({
+        where: { cardId },
+        orderBy: { createdAt: 'asc' },
+      });
+      for (const event of existingEvents) {
+        send(event);
+      }
 
       const poll = async () => {
         try {
@@ -50,47 +61,44 @@ export async function GET(req: NextRequest, { params }: Params) {
 
           const data = (await res.json()) as { status: string; messages: unknown };
 
-          // Validate that messages is an array of strings
           const messages: string[] = Array.isArray(data.messages)
             ? data.messages.filter((m): m is string => typeof m === 'string')
             : [];
 
-          // Only write new messages as CardEvents
+          // Only create events for messages we haven't persisted yet
           const newMessages = messages.slice(lastMessageCount);
-          lastMessageCount = messages.length;
+          if (newMessages.length > 0) {
+            lastMessageCount = messages.length;
 
-          for (const msg of newMessages) {
-            const eventType =
-              data.status === 'failed' ? 'ERROR' :
-              msg.toLowerCase().includes('complete') ? 'SUCCESS' : 'PROGRESS';
+            for (const msg of newMessages) {
+              // Deduplicate: check if this exact message already exists for this card
+              const exists = await db.cardEvent.findFirst({
+                where: { cardId, message: msg },
+              });
+              if (exists) {
+                send(exists); // Send to viewer but don't re-create
+                continue;
+              }
 
-            const event = await db.cardEvent.create({
-              data: {
-                cardId,
-                message: msg,
-                type: eventType,
-              },
-            });
+              const eventType =
+                data.status === 'failed' ? 'ERROR' as const :
+                msg.toLowerCase().includes('complete') ? 'SUCCESS' as const : 'PROGRESS' as const;
 
-            send(event);
+              const event = await db.cardEvent.create({
+                data: { cardId, message: msg, type: eventType },
+              });
+              send(event);
+            }
           }
 
-          // Update card status when pipeline finishes
           if (data.status === 'done') {
-            await db.card.update({
-              where: { id: cardId },
-              data: { status: 'QA' },
-            });
+            await db.card.update({ where: { id: cardId }, data: { status: 'QA' } });
             send({ type: 'done', runId });
           } else if (data.status === 'failed') {
-            await db.card.update({
-              where: { id: cardId },
-              data: { status: 'FAILED' },
-            });
+            await db.card.update({ where: { id: cardId }, data: { status: 'FAILED' } });
             send({ type: 'failed', runId });
           }
 
-          // Stop polling when terminal state reached
           if (data.status === 'done' || data.status === 'failed') {
             controller.close();
           }

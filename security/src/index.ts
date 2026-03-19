@@ -56,7 +56,7 @@ app.get('/alerts', async (req: Request, res: Response) => {
 });
 
 app.post('/alerts/:id/acknowledge', async (req: Request, res: Response) => {
-  const ok = await acknowledgeAlert(req.params.id);
+  const ok = await acknowledgeAlert(String(req.params.id));
   if (!ok) {
     res.status(404).json({ error: 'Alert not found' });
     return;

@@ -40,7 +40,7 @@ export async function handleToolRequest(request: ToolRequest): Promise<ToolReque
 
   try {
     // Step 1: Triage — decide what to do
-    const existingTools = loadTools().filter((t) => t.status === 'ready');
+    const existingTools = (await loadTools()).filter((t) => t.status === 'ready');
     const decision = await triageRequest(request, existingTools);
 
     console.log(`[${runId}] Triage decision: ${decision.action} (${decision.reasoning.slice(0, 100)})`);
@@ -134,7 +134,7 @@ async function createNewTool(runId: string, request: ToolRequest): Promise<ToolR
   console.log(`[${runId}] Creating new tool for: ${request.need.slice(0, 100)}`);
 
   // Research
-  const existingIds = loadTools().map((t) => t.id);
+  const existingIds = (await loadTools()).map((t) => t.id);
   const research = await researchTool({
     runId,
     need: request.need,
@@ -173,7 +173,7 @@ async function updateExistingTool(
     runId,
     need: `Update the existing "${existing.name}" tool: ${updateSpec}. Original description: ${existing.description}. New requirement from ${request.requestingAgent}: ${request.need}`,
     context: request.context,
-    existingTools: loadTools().map((t) => t.id),
+    existingTools: (await loadTools()).map((t) => t.id),
   });
 
   // Build updated version
@@ -219,7 +219,7 @@ async function decoupleTool(
       runId,
       need: spec,
       context: `Decoupled from "${existing.name}": ${existing.description}. Requested by ${request.requestingAgent}: ${request.context}`,
-      existingTools: loadTools().map((t) => t.id),
+      existingTools: (await loadTools()).map((t) => t.id),
     });
 
     const buildResult = await buildTool({ runId, research });

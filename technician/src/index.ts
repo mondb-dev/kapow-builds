@@ -28,9 +28,9 @@ app.get('/health', async (_req: Request, res: Response) => {
 
 app.get('/tools', async (req: Request, res: Response) => {
   const query: ToolQuery = {
-    status: req.query.status as ToolQuery['status'],
+    status: req.query.status ? String(req.query.status) as ToolQuery['status'] : undefined,
     tags: req.query.tags ? String(req.query.tags).split(',') : undefined,
-    search: req.query.search as string | undefined,
+    search: req.query.search ? String(req.query.search) : undefined,
   };
   res.json(await queryTools(query));
 });
@@ -40,7 +40,7 @@ app.get('/tools/ready', async (_req: Request, res: Response) => {
 });
 
 app.get('/tools/:id', async (req: Request, res: Response) => {
-  const tool = await getToolById(req.params.id);
+  const tool = await getToolById(String(req.params.id));
   if (!tool) {
     res.status(404).json({ error: 'Tool not found' });
     return;
@@ -149,7 +149,7 @@ app.post('/build', async (req: Request, res: Response, next: NextFunction) => {
 
 app.post('/tools/:id/regenerate-docs', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const tool = await getToolById(req.params.id);
+    const tool = await getToolById(String(req.params.id));
     if (!tool) {
       res.status(404).json({ error: 'Tool not found' });
       return;

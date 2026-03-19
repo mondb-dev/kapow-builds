@@ -28,7 +28,7 @@ Guidelines:
 - Check existing tools to avoid duplication. If an existing tool partially covers the need, suggest extending it instead of creating a new one.`;
 
 export async function researchTool(request: ResearchRequest): Promise<ResearchResult> {
-  const existingTools = loadTools();
+  const existingTools = await loadTools();
   const existingContext = existingTools.length > 0
     ? `\n\nExisting tools in the registry:\n${existingTools.map((t) => `- ${t.name}: ${t.description} [${t.status}]`).join('\n')}`
     : '\n\nNo existing tools in the registry.';

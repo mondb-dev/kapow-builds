@@ -12,12 +12,12 @@ export interface ToolParameter {
 
 export interface ToolDoc {
   summary: string;
-  usage: string;
-  parameters: string;
-  returns: string;
-  examples: string[];
-  caveats: string[];
-  relatedTools: string[];
+  usage?: string;
+  parameters?: string;
+  returns?: string;
+  examples?: string[];
+  caveats?: string[];
+  relatedTools?: string[];
 }
 
 export interface ToolDefinition {
@@ -31,10 +31,10 @@ export interface ToolDefinition {
   implementation: string;
   testCode: string;
   tags: string[];
-  doc: ToolDoc;
+  doc: ToolDoc | null;
   createdBy: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 // ── Research Agent Types ─────────────────────────────────────────────

@@ -34,7 +34,7 @@ export async function getConversation(
       scope: row.scope ?? undefined,
       plan: row.plan ?? undefined,
       planDetail: row.planDetail ?? undefined,
-      messages: (row.messages as ConversationMessage[]) ?? [],
+      messages: (row.messages as unknown as ConversationMessage[]) ?? [],
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
@@ -93,8 +93,8 @@ export async function updateConversation(state: ConversationState): Promise<void
       runId: state.runId ?? null,
       scope: state.scope ?? null,
       plan: state.plan ?? null,
-      planDetail: state.planDetail ? (state.planDetail as Record<string, unknown>) : undefined,
-      messages: state.messages as unknown[],
+      planDetail: state.planDetail ? JSON.parse(JSON.stringify(state.planDetail)) : undefined,
+      messages: JSON.parse(JSON.stringify(state.messages)),
     },
   });
 }

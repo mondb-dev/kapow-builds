@@ -1,12 +1,74 @@
+# Multi-stage build for Kapow agents
+# Build context must be the repo root (not the service directory)
+#
+# Usage: docker build -f Dockerfile.agent --build-arg SERVICE=planner .
+
+ARG SERVICE=planner
+
+# ── Stage 1: Build ────────────────────────────────────────────────────
+FROM node:22-alpine AS builder
+
+WORKDIR /build
+
+# Copy shared packages first (agents depend on these)
+COPY shared/package.json shared/package-lock.json* shared/
+COPY db/package.json db/package-lock.json* db/
+COPY tool-client/package.json tool-client/package-lock.json* tool-client/
+
+# Copy the target service
+ARG SERVICE
+COPY ${SERVICE}/package.json ${SERVICE}/package-lock.json* ${SERVICE}/
+
+# Install ALL deps (including devDependencies for build)
+RUN cd shared && npm ci
+RUN cd db && npm ci
+RUN cd tool-client && npm ci
+RUN cd ${SERVICE} && npm ci
+
+# Copy source
+COPY shared/src shared/src
+COPY shared/tsconfig.json shared/
+COPY db/src db/src
+COPY db/tsconfig.json db/
+COPY db/prisma db/prisma
+COPY tool-client/src tool-client/src
+COPY tool-client/tsconfig.json tool-client/
+COPY ${SERVICE}/src ${SERVICE}/src
+COPY ${SERVICE}/tsconfig.json ${SERVICE}/
+
+# Build shared packages, then the service
+RUN cd shared && npx tsc
+RUN cd db && npx prisma generate && npx tsc
+RUN cd tool-client && npx tsc
+RUN cd ${SERVICE} && npx tsc
+
+# ── Stage 2: Runtime ──────────────────────────────────────────────────
 FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+ARG SERVICE
 
-COPY . .
-RUN npm run build
+# Copy built packages
+COPY --from=builder /build/shared/dist shared/dist
+COPY --from=builder /build/shared/package.json shared/
+COPY --from=builder /build/shared/node_modules shared/node_modules
+
+COPY --from=builder /build/db/dist db/dist
+COPY --from=builder /build/db/package.json db/
+COPY --from=builder /build/db/node_modules db/node_modules
+COPY --from=builder /build/db/prisma db/prisma
+
+COPY --from=builder /build/tool-client/dist tool-client/dist
+COPY --from=builder /build/tool-client/package.json tool-client/
+
+COPY --from=builder /build/${SERVICE}/dist ${SERVICE}/dist
+COPY --from=builder /build/${SERVICE}/package.json ${SERVICE}/
+
+# Production install for the service only (no devDeps)
+RUN cd ${SERVICE} && npm ci --omit=dev 2>/dev/null || true
+
+WORKDIR /app/${SERVICE}
 
 EXPOSE ${PORT:-3000}
 

@@ -1,5 +1,5 @@
 import puppeteer, { Browser, Page } from 'puppeteer-core';
-import { join } from 'path';
+import { resolveSandboxPath } from '../sandbox.js';
 
 let browser: Browser | null = null;
 let page: Page | null = null;
@@ -37,7 +37,7 @@ export async function browserNavigate(url: string): Promise<string> {
 
 export async function browserScreenshot(sandboxPath: string, filename: string): Promise<string> {
   const p = await getPage();
-  const screenshotPath = join(sandboxPath, filename.endsWith('.png') ? filename : `${filename}.png`);
+  const screenshotPath = resolveSandboxPath(sandboxPath, filename.endsWith('.png') ? filename : `${filename}.png`);
   await p.screenshot({ path: screenshotPath, fullPage: true });
   return `Screenshot saved to ${screenshotPath}`;
 }

@@ -30,6 +30,7 @@ export class SlackAdapter implements ChannelAdapter {
     // Listen for @kapow mentions
     this.app.event('app_mention', async ({ event, say }) => {
       if (!this.handler) return;
+      if (!event.user) return;
 
       const userName = await this.resolveUserName(event.user);
       const threadTs = event.thread_ts ?? event.ts;
@@ -111,12 +112,13 @@ export class SlackAdapter implements ChannelAdapter {
   }
 
   async uploadFile(channelId: string, threadId: string, file: ChannelFile): Promise<string | null> {
+    if (!file.content) return null;
     try {
       const result = await this.app.client.files.uploadV2({
         channel_id: channelId,
         thread_ts: threadId,
         filename: file.name,
-        content: file.content,
+        content: file.content.toString('utf-8'),
       });
       return (result as { file?: { permalink?: string } }).file?.permalink ?? null;
     } catch {
