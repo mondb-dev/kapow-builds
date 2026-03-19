@@ -1,0 +1,80 @@
+import { auth } from '@/lib/auth';
+import { redirect, notFound } from 'next/navigation';
+import { db } from '@/lib/db';
+import { Board } from '@/components/Board';
+import Link from 'next/link';
+
+export const dynamic = 'force-dynamic';
+
+interface Params {
+  params: Promise<{ projectId: string }>;
+}
+
+export default async function ProjectKanbanPage({ params }: Params) {
+  const session = await auth();
+  if (!session?.user) redirect('/login');
+
+  const { projectId } = await params;
+
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { id: true, name: true, repoUrl: true },
+  });
+
+  if (!project) notFound();
+
+  const cards = await db.card.findMany({
+    where: { projectId },
+    include: {
+      assignee: { select: { id: true, name: true, image: true } },
+      creator: { select: { id: true, name: true, image: true } },
+      _count: { select: { events: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
+      <header className="flex-shrink-0 border-b border-gray-800 bg-gray-950/80 backdrop-blur-sm px-6 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href={`/board/projects/${projectId}`} className="text-gray-400 hover:text-white text-sm">
+              ← {project.name}
+            </Link>
+            <span className="text-gray-600">|</span>
+            <h1 className="text-lg font-semibold text-white tracking-tight">Board</h1>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {project.repoUrl && (
+              <a
+                href={project.repoUrl}
+                target="_blank"
+                rel="noopener"
+                className="text-xs text-gray-400 hover:text-blue-400"
+              >
+                GitHub ↗
+              </a>
+            )}
+            <Link href="/board" className="text-xs text-gray-500 hover:text-white">
+              All Cards
+            </Link>
+            {session.user.image && (
+              <img
+                src={session.user.image}
+                alt={session.user.name ?? 'User'}
+                className="w-7 h-7 rounded-full border border-gray-700"
+              />
+            )}
+          </div>
+        </div>
+      </header>
+
+      <Board
+        initialCards={JSON.parse(JSON.stringify(cards))}
+        currentUserId={session.user.id}
+        currentUserName={session.user.name ?? 'You'}
+      />
+    </div>
+  );
+}

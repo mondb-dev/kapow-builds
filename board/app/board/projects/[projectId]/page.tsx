@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
+import { createGitHubRepo, isGitHubConfigured } from '@/lib/github';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +76,27 @@ async function deleteProject(formData: FormData) {
   redirect('/board/projects');
 }
 
+async function createRepo(formData: FormData) {
+  'use server';
+  const session = await auth();
+  if (!session?.user) return;
+
+  const id = formData.get('id') as string;
+  const name = formData.get('name') as string;
+  const description = formData.get('description') as string;
+  if (!id || !name) return;
+
+  const result = await createGitHubRepo(name, description);
+  if (result) {
+    await db.project.update({
+      where: { id },
+      data: { repoUrl: result.repoUrl },
+    });
+  }
+
+  revalidatePath(`/board/projects/${id}`);
+}
+
 export default async function ProjectDetailPage({ params }: Params) {
   const session = await auth();
   if (!session?.user) redirect('/login');
@@ -103,11 +125,31 @@ export default async function ProjectDetailPage({ params }: Params) {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <header className="border-b border-gray-800 px-6 py-3">
-        <div className="flex items-center gap-4">
-          <Link href="/board/projects" className="text-gray-400 hover:text-white text-sm">
-            ← Projects
-          </Link>
-          <h1 className="text-lg font-semibold">{project.name}</h1>
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center gap-4">
+            <Link href="/board/projects" className="text-gray-400 hover:text-white text-sm">
+              ← Projects
+            </Link>
+            <h1 className="text-lg font-semibold">{project.name}</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            {project.repoUrl && (
+              <a
+                href={project.repoUrl}
+                target="_blank"
+                rel="noopener"
+                className="px-3 py-1.5 text-sm text-gray-400 border border-gray-700 hover:border-gray-500 rounded-md"
+              >
+                GitHub ↗
+              </a>
+            )}
+            <Link
+              href={`/board/projects/${project.id}/kanban`}
+              className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded-md font-medium"
+            >
+              Open Board
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -146,21 +188,58 @@ export default async function ProjectDetailPage({ params }: Params) {
           </form>
         </section>
 
-        {/* Repo URL */}
+        {/* Repository */}
         <section>
-          <label className="text-xs text-gray-500 uppercase tracking-wide">Repository URL</label>
-          <form action={updateRepoUrl} className="flex gap-2 mt-1">
-            <input type="hidden" name="id" value={project.id} />
-            <input
-              name="repoUrl"
-              defaultValue={project.repoUrl ?? ''}
-              placeholder="https://github.com/..."
-              className="flex-1 bg-gray-900 border border-gray-800 rounded-md px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
-            />
-            <button type="submit" className="px-3 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded-md">
-              Save
-            </button>
-          </form>
+          <label className="text-xs text-gray-500 uppercase tracking-wide">Repository</label>
+          {project.repoUrl ? (
+            <div className="mt-1 flex items-center gap-3">
+              <a
+                href={project.repoUrl}
+                target="_blank"
+                rel="noopener"
+                className="text-blue-400 hover:text-blue-300 text-sm"
+              >
+                {project.repoUrl} ↗
+              </a>
+              <form action={updateRepoUrl} className="flex gap-2">
+                <input type="hidden" name="id" value={project.id} />
+                <input type="hidden" name="repoUrl" value="" />
+                <button type="submit" className="text-xs text-gray-500 hover:text-red-400">
+                  Unlink
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center gap-3">
+              {isGitHubConfigured() ? (
+                <form action={createRepo} className="flex gap-2">
+                  <input type="hidden" name="id" value={project.id} />
+                  <input type="hidden" name="name" value={project.name} />
+                  <input type="hidden" name="description" value={project.description ?? ''} />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md"
+                  >
+                    Create GitHub Repo
+                  </button>
+                </form>
+              ) : (
+                <p className="text-sm text-gray-600">Set GITHUB_TOKEN in .env to enable auto repo creation</p>
+              )}
+              <span className="text-gray-700">or</span>
+              <form action={updateRepoUrl} className="flex gap-2">
+                <input type="hidden" name="id" value={project.id} />
+                <input
+                  name="repoUrl"
+                  placeholder="https://github.com/..."
+                  className="bg-gray-900 border border-gray-800 rounded-md px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none w-72"
+                />
+                <button type="submit" className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-md">
+                  Link
+                </button>
+              </form>
+            </div>
+          )}
         </section>
 
         {/* Recent Cards */}
