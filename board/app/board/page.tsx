@@ -39,6 +39,7 @@ export default async function BoardPage() {
           <nav className="flex items-center gap-4 text-sm">
             <Link href="/board/projects" className="text-gray-400 hover:text-white transition-colors">Projects</Link>
             <Link href="/board/runs" className="text-gray-400 hover:text-white transition-colors">Runs</Link>
+            <Link href="/board/logs" className="text-gray-400 hover:text-white transition-colors">Logs</Link>
             <Link href="/board/security" className="text-gray-400 hover:text-white transition-colors">Security</Link>
           </nav>
 

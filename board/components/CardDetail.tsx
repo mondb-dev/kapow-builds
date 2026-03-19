@@ -305,6 +305,9 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
         </div>
       )}
 
+      {/* Pipeline Logs — shows raw agent conversation */}
+      {card.runId && <PipelineLogs runId={card.runId} isRunning={isAgentRunning} />}
+
       {/* Activity log */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-gray-800 flex items-center justify-between">
@@ -336,6 +339,97 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
           <div ref={eventsEndRef} />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Pipeline Logs Component ──────────────────────────────────────────
+
+function PipelineLogs({ runId, isRunning }: { runId: string; isRunning: boolean }) {
+  const [messages, setMessages] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState(true);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch(`/api/runs/${runId}/logs`);
+        if (res.ok) {
+          const data = await res.json();
+          if (active && Array.isArray(data.messages)) {
+            setMessages(data.messages);
+          }
+        }
+      } catch { /* skip */ }
+    };
+
+    fetchLogs();
+    if (isRunning) {
+      const interval = setInterval(fetchLogs, 3000);
+      return () => { active = false; clearInterval(interval); };
+    }
+    return () => { active = false; };
+  }, [runId, isRunning]);
+
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const colorize = (line: string) => {
+    if (line.includes('ERROR') || line.includes('failed') || line.includes('error')) return 'text-red-400';
+    if (line.includes('Tool:')) return 'text-cyan-300';
+    if (line.includes('Result:')) return 'text-gray-500';
+    if (line.includes('complete') || line.includes('passed')) return 'text-green-400';
+    if (line.includes('Starting') || line.includes('Building') || line.includes('QA')) return 'text-blue-400';
+    if (line.includes('WARNING') || line.includes('Fix')) return 'text-amber-400';
+    return 'text-gray-400';
+  };
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-5 py-3.5 border-b border-gray-800 flex items-center justify-between hover:bg-gray-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Pipeline Logs
+          </h2>
+          <span className="text-xs text-gray-600">({messages.length} messages)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isRunning && (
+            <span className="flex items-center gap-1.5 text-xs text-blue-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
+              Running
+            </span>
+          )}
+          <span className="text-gray-600 text-xs">{expanded ? '▼' : '▶'}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div
+          ref={logRef}
+          className="max-h-80 overflow-y-auto p-4 font-mono text-xs leading-5 space-y-0.5"
+        >
+          {messages.length === 0 ? (
+            <p className="text-gray-600 text-center py-4">
+              {isRunning ? 'Waiting for pipeline output...' : 'No pipeline logs.'}
+            </p>
+          ) : (
+            messages.map((msg, i) => (
+              <div key={i} className={`${colorize(msg)} whitespace-pre-wrap break-all`}>
+                {msg}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
