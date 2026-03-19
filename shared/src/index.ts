@@ -1,4 +1,5 @@
 export * from './types.js';
+export { KAPOW_IDENTITY, KAPOW_LINES, withPersona } from './persona.js';
 export { createAgent, type Agent, type AgentConfig } from './agent-base.js';
 export { MessageBus, getBus, BusClient, BusTopics } from './bus/index.js';
 export type { BusMessage, FileAttachment, MessageHandler, BusTopic } from './bus/index.js';

@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { createProject } from 'kapow-db/projects';
-import { getProjectRecipes, formatRecipesForPrompt } from 'kapow-db/recipes';
-import { getProjectPreferences, formatPreferencesForPrompt } from 'kapow-db/preferences';
+import { KAPOW_LINES } from 'kapow-shared';
 import { detectIntent } from './intent.js';
 import {
   getConversation, createConversation, updateConversation, addMessage,
@@ -18,6 +17,9 @@ export type ReplyFn = (text: string) => Promise<void>;
 // ── Platform hint (set per-conversation for formatting) ──────────────
 export type Platform = 'slack' | 'discord' | 'plain';
 
+// ── Shorthand ────────────────────────────────────────────────────────
+const K = KAPOW_LINES;
+
 // ── Main entry point ─────────────────────────────────────────────────
 
 export async function handleMessage(
@@ -29,15 +31,12 @@ export async function handleMessage(
   reply: ReplyFn,
   platform: Platform = 'plain',
 ): Promise<void> {
-  // Get or create conversation
   let convo = await getConversation(channelId, threadTs);
   if (!convo) {
     convo = await createConversation(channelId, threadTs, userId, userName);
   }
 
   addMessage(convo, 'user', text);
-
-  // Detect intent based on current phase
   const intent = await detectIntent(text, convo.phase);
 
   try {
@@ -47,7 +46,7 @@ export async function handleMessage(
         break;
       case 'scoping':
       case 'planning':
-        await reply("I'm still working on the plan, hang tight...");
+        await say(convo, reply, K.planningStart);
         break;
       case 'negotiating':
         await handleNegotiating(convo, intent, reply, platform);
@@ -63,12 +62,18 @@ export async function handleMessage(
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[comms] Error handling message:`, msg);
-    addMessage(convo, 'kapow', `Something went wrong: ${msg}`);
-    await reply(`Something went wrong: ${msg}`);
+    console.error(`[comms] Error:`, msg);
+    await say(convo, reply, K.error(msg));
   }
 
   await updateConversation(convo);
+}
+
+// ── Helper: say something as Kapow ───────────────────────────────────
+
+async function say(convo: ConversationState, reply: ReplyFn, text: string): Promise<void> {
+  addMessage(convo, 'kapow', text);
+  await reply(text);
 }
 
 // ── Phase Handlers ───────────────────────────────────────────────────
@@ -83,30 +88,21 @@ async function handleIdle(
     case 'new_project': {
       convo.phase = 'scoping';
       convo.scope = intent.scope;
-      addMessage(convo, 'kapow', `Got it. Let me analyze the scope and create a detailed plan...`);
-      await reply(`Got it. Let me analyze the scope and create a detailed plan...\n\n> ${intent.scope}`);
+      await say(convo, reply, K.planningStart);
       await updateConversation(convo);
-
-      // Call planner asynchronously
       await generatePlan(convo, reply, platform);
       break;
     }
     case 'list_projects': {
-      const response = `You can view all projects on the board. What would you like to build?`;
-      addMessage(convo, 'kapow', response);
-      await reply(response);
+      await say(convo, reply, `Projects are on the board. You got something new for me, or what?`);
       break;
     }
     case 'help': {
-      const response = HELP_TEXT;
-      addMessage(convo, 'kapow', response);
-      await reply(response);
+      await say(convo, reply, K.help);
       break;
     }
     default: {
-      const response = `Hey ${convo.userName}! Tell me what you'd like to build and I'll create a detailed plan for your review.\n\nFor example: _"Create a REST API for user management with auth, CRUD endpoints, and Postgres"_`;
-      addMessage(convo, 'kapow', response);
-      await reply(response);
+      await say(convo, reply, K.greeting(convo.userName));
       break;
     }
   }
@@ -121,10 +117,8 @@ async function handleNegotiating(
   switch (intent.type) {
     case 'approve': {
       convo.phase = 'confirmed';
-      addMessage(convo, 'kapow', 'Plan approved. Starting the build pipeline...');
-      await reply('Plan approved. Starting the build pipeline...');
+      await say(convo, reply, K.approved);
       await updateConversation(convo);
-
       await startPipeline(convo, reply);
       break;
     }
@@ -133,38 +127,29 @@ async function handleNegotiating(
       convo.scope = undefined;
       convo.plan = undefined;
       convo.planDetail = undefined;
-      const response = `Alright, plan scrapped.${intent.reason ? ` (${intent.reason})` : ''} Let me know when you have a new idea.`;
-      addMessage(convo, 'kapow', response);
-      await reply(response);
+      await say(convo, reply, K.rejected);
       break;
     }
     case 'modify_scope': {
       convo.phase = 'scoping';
       convo.scope = `${convo.scope}\n\nUser modifications:\n${intent.changes}`;
-      addMessage(convo, 'kapow', 'Got it, revising the plan with your changes...');
-      await reply('Got it, revising the plan with your changes...');
+      await say(convo, reply, K.planRevising);
       await updateConversation(convo);
-
       await generatePlan(convo, reply, platform);
       break;
     }
     case 'new_project': {
-      // User is starting over with a completely new scope
       convo.scope = intent.scope;
       convo.plan = undefined;
       convo.planDetail = undefined;
       convo.phase = 'scoping';
-      addMessage(convo, 'kapow', 'New scope received. Replanning...');
-      await reply('New scope received. Replanning...');
+      await say(convo, reply, `New job? Alright, scrapping the old plan. Give me a sec.`);
       await updateConversation(convo);
-
       await generatePlan(convo, reply, platform);
       break;
     }
     default: {
-      const response = 'The plan is ready for your review above. You can:\n• *Approve* — say "go", "approved", "ship it"\n• *Modify* — describe what you want changed\n• *Reject* — say "cancel" or "scrap it"';
-      addMessage(convo, 'kapow', response);
-      await reply(response);
+      await say(convo, reply, `The plan's up there. Say "go" to build, tell me what to change, or "cancel" to scrap it. Your call.`);
       break;
     }
   }
@@ -177,7 +162,7 @@ async function handleBuilding(
 ): Promise<void> {
   if (intent.type === 'check_status' || intent.type === 'unknown') {
     if (!convo.runId) {
-      await reply('The build is starting up...');
+      await say(convo, reply, `Warming up. Hold on.`);
       return;
     }
 
@@ -185,14 +170,14 @@ async function handleBuilding(
       const res = await axios.get(`${ACTIONS_URL}/runs/${convo.runId}/status`, { timeout: 5000 });
       const { status, messages } = res.data as { status: string; messages: string[] };
       const lastMessages = messages.slice(-5).map((m: string) => `> ${m}`).join('\n');
-      await reply(`*Status:* ${status}\n\n*Recent activity:*\n${lastMessages}`);
+      await say(convo, reply, `Status: *${status}*. ${K.statusRunning}\n\n${lastMessages}`);
     } catch {
-      await reply(`Pipeline is running (run ID: \`${convo.runId}\`). Check the board for live updates.`);
+      await say(convo, reply, `Pipeline's running. Run \`${convo.runId}\`. ${K.statusRunning}`);
     }
     return;
   }
 
-  await reply("I'm currently building your project. Ask me for a status update or wait for completion.");
+  await say(convo, reply, K.buildProgress);
 }
 
 async function handleCompleted(
@@ -202,22 +187,22 @@ async function handleCompleted(
   platform: Platform,
 ): Promise<void> {
   if (intent.type === 'new_project') {
-    // Reset and start over
     convo.phase = 'scoping';
     convo.scope = intent.scope;
     convo.plan = undefined;
     convo.planDetail = undefined;
     convo.runId = undefined;
-    addMessage(convo, 'kapow', 'New project! Let me plan this out...');
-    await reply('New project! Let me plan this out...');
+    await say(convo, reply, `Another one? Let's go.`);
     await updateConversation(convo);
-
     await generatePlan(convo, reply, platform);
     return;
   }
 
-  const status = convo.phase === 'done' ? 'completed successfully' : 'failed';
-  await reply(`The previous build ${status}. Want to start something new? Just describe what you'd like to build.`);
+  if (convo.phase === 'done') {
+    await say(convo, reply, `Last build's done. ${K.statusIdle}`);
+  } else {
+    await say(convo, reply, `Last one didn't make it. Wanna take another shot? Describe the job.`);
+  }
 }
 
 // ── Plan Generation ──────────────────────────────────────────────────
@@ -227,35 +212,27 @@ async function generatePlan(convo: ConversationState, reply: ReplyFn, platform: 
   await updateConversation(convo);
 
   try {
-    // Call the planner service directly
     const planRes = await axios.post(
       `${PLANNER_URL}/plan`,
-      {
-        runId: `scope-${convo.id}`,
-        plan: convo.scope,
-      },
+      { runId: `scope-${convo.id}`, plan: convo.scope },
       { timeout: 180_000 },
     );
 
     const projectPlan = planRes.data;
     convo.planDetail = projectPlan;
 
-    // Format plan for the current platform
     const formattedPlan = formatPlan(projectPlan as PlanData, platform);
     convo.plan = formattedPlan;
     convo.phase = 'negotiating';
-
-    // Derive project name from the plan
     convo.projectName = projectPlan.architecture?.overview?.slice(0, 80) ?? 'Untitled Project';
 
     addMessage(convo, 'kapow', formattedPlan);
     await reply(formattedPlan);
-    await reply(formatPrompt(platform));
+    await reply(`${K.planReady}\n\n${formatPrompt(platform)}`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     convo.phase = 'idle';
-    addMessage(convo, 'kapow', `Planning failed: ${msg}`);
-    await reply(`Planning failed: ${msg}\n\nTry again with a different description?`);
+    await say(convo, reply, K.error(`Planner choked: ${msg}. Try describing it differently.`));
   }
 
   await updateConversation(convo);
@@ -267,14 +244,12 @@ async function startPipeline(convo: ConversationState, reply: ReplyFn): Promise<
   convo.phase = 'building';
 
   try {
-    // Create project in DB
     const project = await createProject(
       convo.projectName ?? 'Slack Project',
       convo.scope,
     );
     convo.projectId = project.id;
 
-    // Trigger pipeline via actions HTTP API
     const res = await axios.post(
       `${ACTIONS_URL}/pipeline`,
       { plan: convo.scope, runId: `slack-${convo.id}` },
@@ -282,18 +257,14 @@ async function startPipeline(convo: ConversationState, reply: ReplyFn): Promise<
     );
 
     convo.runId = (res.data as { runId: string }).runId;
-    addMessage(convo, 'kapow', `Pipeline started (run: \`${convo.runId}\`). I'll update you on progress.`);
-    await reply(`Pipeline started (run: \`${convo.runId}\`)\n\nI'll post updates here as the build progresses. You can also track it on the board.`);
+    await say(convo, reply, K.buildStarted(convo.runId));
 
     await updateConversation(convo);
-
-    // Start polling for progress updates
     pollPipelineProgress(convo, reply);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     convo.phase = 'failed';
-    addMessage(convo, 'kapow', `Failed to start pipeline: ${msg}`);
-    await reply(`Failed to start pipeline: ${msg}`);
+    await say(convo, reply, K.error(`Pipeline wouldn't start: ${msg}`));
     await updateConversation(convo);
   }
 }
@@ -302,8 +273,8 @@ async function pollPipelineProgress(convo: ConversationState, reply: ReplyFn): P
   if (!convo.runId) return;
 
   let lastMessageCount = 0;
-  const pollInterval = 15_000; // 15 seconds
-  const maxPolls = 240;        // 1 hour max
+  const pollInterval = 15_000;
+  const maxPolls = 240;
 
   for (let i = 0; i < maxPolls; i++) {
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
@@ -312,10 +283,8 @@ async function pollPipelineProgress(convo: ConversationState, reply: ReplyFn): P
       const res = await axios.get(`${ACTIONS_URL}/runs/${convo.runId}/status`, { timeout: 5000 });
       const { status, messages } = res.data as { status: string; messages: string[] };
 
-      // Post new messages to Slack thread
       const newMessages = messages.slice(lastMessageCount);
       if (newMessages.length > 0) {
-        // Batch into one message to avoid spam
         const update = newMessages.map((m) => `> ${m}`).join('\n');
         await reply(update);
         lastMessageCount = messages.length;
@@ -323,44 +292,19 @@ async function pollPipelineProgress(convo: ConversationState, reply: ReplyFn): P
 
       if (status === 'done') {
         convo.phase = 'done';
-        addMessage(convo, 'kapow', 'Build complete! All tasks passed.');
-        await reply('*Build complete!* All tasks passed. Check the board for artifacts and details.');
+        await say(convo, reply, K.buildDone);
         await updateConversation(convo);
         return;
       }
 
       if (status === 'failed') {
         convo.phase = 'failed';
-        addMessage(convo, 'kapow', 'Build failed.');
-        await reply('*Build failed.* Check the board for details. Want to try again with a modified scope?');
+        await say(convo, reply, K.buildFailed);
         await updateConversation(convo);
         return;
       }
     } catch {
-      // Network error — skip this poll
+      // Skip
     }
   }
 }
-
-// ── Help Text ────────────────────────────────────────────────────────
-
-const HELP_TEXT = `*Kapow* is an AI development pipeline. Here's how to use me:
-
-*Start a project:*
-Tag me and describe what you want to build:
-> @kapow Create a REST API for user management with auth and Postgres
-
-*I'll respond with:*
-1. A detailed plan with phases, tasks, and architecture
-2. You review and negotiate the scope
-3. Say "go" when you're happy
-4. I build it and post updates here
-
-*Commands:*
-• Describe a project → I'll plan it
-• "go" / "approved" → Start building
-• Describe changes → I'll revise the plan
-• "cancel" → Scrap the current plan
-• "status" → Check build progress
-
-*Everything happens in this thread* — plan, negotiate, build, done.`;
