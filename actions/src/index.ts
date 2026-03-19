@@ -171,6 +171,10 @@ async function main() {
   // Start HTTP server for kapow-board integration (port 3000)
   createHttpServer(3000);
 
+  // Start bus API for inter-agent messaging (port 3010)
+  const { startBusServer } = await import('./bus-server.js');
+  startBusServer(3010);
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write('kapow-actions MCP server running on stdio\n');

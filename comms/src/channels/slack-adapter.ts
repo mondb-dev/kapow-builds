@@ -1,5 +1,6 @@
 import { App } from '@slack/bolt';
-import type { ChannelAdapter, ChannelMessage, ChannelReply } from './adapter.js';
+import axios from 'axios';
+import type { ChannelAdapter, ChannelMessage, ChannelReply, ChannelFile } from './adapter.js';
 
 export class SlackAdapter implements ChannelAdapter {
   readonly platform = 'slack';
@@ -32,6 +33,7 @@ export class SlackAdapter implements ChannelAdapter {
 
       const userName = await this.resolveUserName(event.user);
       const threadTs = event.thread_ts ?? event.ts;
+      const files = await this.extractFiles(event as { files?: Array<{ name: string; mimetype: string; size: number; url_private: string }> });
 
       const replies = await this.handler({
         channelId: event.channel,
@@ -39,6 +41,7 @@ export class SlackAdapter implements ChannelAdapter {
         userId: event.user,
         userName,
         text: this.stripMention(event.text),
+        files: files.length > 0 ? files : undefined,
         raw: event,
       });
 
@@ -107,8 +110,52 @@ export class SlackAdapter implements ChannelAdapter {
     this.healthy = false;
   }
 
+  async uploadFile(channelId: string, threadId: string, file: ChannelFile): Promise<string | null> {
+    try {
+      const result = await this.app.client.files.uploadV2({
+        channel_id: channelId,
+        thread_ts: threadId,
+        filename: file.name,
+        content: file.content,
+      });
+      return (result as { file?: { permalink?: string } }).file?.permalink ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async downloadFile(url: string): Promise<Buffer | null> {
+    try {
+      const res = await axios.get(url, {
+        responseType: 'arraybuffer',
+        headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
+        timeout: 30_000,
+      });
+      return Buffer.from(res.data);
+    } catch {
+      return null;
+    }
+  }
+
   isHealthy(): boolean {
     return this.healthy;
+  }
+
+  private async extractFiles(event: { files?: Array<{ name: string; mimetype: string; size: number; url_private: string }> }): Promise<ChannelFile[]> {
+    if (!event.files || event.files.length === 0) return [];
+
+    const files: ChannelFile[] = [];
+    for (const f of event.files) {
+      const content = await this.downloadFile(f.url_private);
+      files.push({
+        name: f.name,
+        mimeType: f.mimetype,
+        size: f.size,
+        url: f.url_private,
+        content: content ?? undefined,
+      });
+    }
+    return files;
   }
 
   private stripMention(text: string): string {

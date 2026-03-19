@@ -17,9 +17,19 @@ export type ConversationPhase =
   | 'done'          // pipeline complete
   | 'failed';       // pipeline or conversation failed
 
+export interface ConversationFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  localPath?: string;
+  url?: string;
+}
+
 export interface ConversationMessage {
   role: 'user' | 'kapow';
   text: string;
+  files?: ConversationFile[];
   timestamp: string;
 }
 
