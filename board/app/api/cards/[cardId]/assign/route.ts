@@ -47,7 +47,23 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   if (assigneeType === 'AGENT') {
-    const runId = randomUUID();
+    // Ensure card has a project (create default if needed)
+    let projectId = card.projectId;
+    if (!projectId) {
+      const project = await db.project.create({
+        data: { name: card.title },
+      });
+      projectId = project.id;
+      await db.card.update({ where: { id: cardId }, data: { projectId } });
+    }
+
+    // Create a Run record (Card.runId is a FK to Run)
+    const run = await db.run.create({
+      data: {
+        projectId,
+        plan: card.description,
+      },
+    });
 
     await db.card.update({
       where: { id: cardId },
@@ -55,9 +71,11 @@ export async function POST(req: NextRequest, { params }: Params) {
         assigneeType: 'AGENT',
         assigneeId: null,
         status: 'IN_PROGRESS',
-        runId,
+        runId: run.id,
       },
     });
+
+    const runId = run.id;
 
     const updated = await db.card.findUnique({
       where: { id: cardId },
