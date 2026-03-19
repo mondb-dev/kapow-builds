@@ -4,7 +4,7 @@
  * Usage: npx tsx kapow.ts <command>
  */
 import { spawn, execSync, type ChildProcess } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, copyFileSync, openSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, copyFileSync, openSync, symlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -342,7 +342,6 @@ function startDev() {
       // Board is a Next.js app — needs .env symlinked from root
       const boardEnv = join(ROOT, 'board', '.env');
       if (!existsSync(boardEnv)) {
-        const { symlinkSync } = await import('fs');
         try { symlinkSync(ENV_FILE, boardEnv); } catch { /* already exists */ }
       }
       startBackground(svc.name, cwd, 'npx', ['next', 'dev', '-p', String(svc.port)], {
