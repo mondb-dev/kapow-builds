@@ -88,14 +88,13 @@ function startBackground(name: string, cwd: string, cmd: string, args: string[])
 function install() {
   console.log('Installing dependencies...\n');
 
-  // DB package first (others depend on it)
-  console.log('[db]');
-  run('npm install', join(ROOT, 'db'));
-  run('npx prisma generate', join(ROOT, 'db'));
-
-  // Tool client
-  console.log('\n[tool-client]');
-  run('npm install', join(ROOT, 'tool-client'));
+  // Foundation packages first (others depend on these)
+  for (const pkg of ['shared', 'db', 'tool-client']) {
+    console.log(`[${pkg}]`);
+    run('npm install', join(ROOT, pkg));
+    if (pkg === 'db') run('npx prisma generate', join(ROOT, pkg));
+    console.log('');
+  }
 
   for (const svc of ALL_SERVICES) {
     console.log(`\n[${svc.name}]`);
@@ -123,13 +122,12 @@ function dev() {
 function build() {
   console.log('Building all packages...\n');
 
-  // DB first
-  console.log('[db]');
-  run('npm run build', join(ROOT, 'db'));
-
-  // Tool client
-  console.log('\n[tool-client]');
-  run('npm run build', join(ROOT, 'tool-client'));
+  // Foundation packages first
+  for (const pkg of ['shared', 'db', 'tool-client']) {
+    console.log(`[${pkg}]`);
+    run('npm run build', join(ROOT, pkg));
+    console.log('');
+  }
 
   for (const svc of ALL_SERVICES) {
     console.log(`\n[${svc.name}]`);

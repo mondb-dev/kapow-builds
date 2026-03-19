@@ -1,18 +1,14 @@
-import express, { Request, Response, NextFunction } from 'express';
+import { createAgent } from 'kapow-shared';
 import { buildTask, fixTask } from './builder.js';
 import type { TaskBuildRequest, TaskFixRequest } from './types.js';
 
-const app = express();
-app.use(express.json({ limit: '50mb' }));
-
-const PORT = parseInt(process.env.PORT ?? '3002', 10);
-
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'kapow-builder' });
+const agent = createAgent('builder', {
+  requiresAI: true,
+  bodyLimit: '50mb',
 });
 
 // Per-task build endpoint
-app.post('/build-task', async (req: Request, res: Response, next: NextFunction) => {
+agent.app.post('/build-task', async (req, res, next) => {
   try {
     const body = req.body as TaskBuildRequest;
 
@@ -40,7 +36,7 @@ app.post('/build-task', async (req: Request, res: Response, next: NextFunction) 
 });
 
 // Per-task fix endpoint
-app.post('/fix-task', async (req: Request, res: Response, next: NextFunction) => {
+agent.app.post('/fix-task', async (req, res, next) => {
   try {
     const body = req.body as TaskFixRequest;
 
@@ -63,17 +59,4 @@ app.post('/fix-task', async (req: Request, res: Response, next: NextFunction) =>
   }
 });
 
-// Error handler
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Builder error:', err);
-  res.status(500).json({ error: err.message });
-});
-
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('FATAL: ANTHROPIC_API_KEY is required');
-  process.exit(1);
-}
-
-app.listen(PORT, () => {
-  console.log(`kapow-builder listening on port ${PORT}`);
-});
+agent.start();

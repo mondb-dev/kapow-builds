@@ -1,17 +1,12 @@
-import express, { Request, Response, NextFunction } from 'express';
+import { createAgent } from 'kapow-shared';
 import { createProjectPlan } from './planner.js';
 import type { PlanRequest } from './types.js';
 
-const app = express();
-app.use(express.json({ limit: '10mb' }));
-
-const PORT = parseInt(process.env.PORT ?? '3001', 10);
-
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'kapow-planner' });
+const agent = createAgent('planner', {
+  requiresAI: true,
 });
 
-app.post('/plan', async (req: Request, res: Response, next: NextFunction) => {
+agent.app.post('/plan', async (req, res, next) => {
   try {
     const { runId, plan, recipes, preferences } = req.body as PlanRequest;
 
@@ -35,17 +30,4 @@ app.post('/plan', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// Error handler
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Planner error:', err);
-  res.status(500).json({ error: err.message });
-});
-
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('FATAL: ANTHROPIC_API_KEY is required');
-  process.exit(1);
-}
-
-app.listen(PORT, () => {
-  console.log(`kapow-planner listening on port ${PORT}`);
-});
+agent.start();

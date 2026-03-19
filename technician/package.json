@@ -13,7 +13,8 @@
     "@anthropic-ai/sdk": "^0.36.3",
     "axios": "^1.7.9",
     "express": "^4.21.2",
-    "kapow-db": "file:../db"
+    "kapow-db": "file:../db",
+    "kapow-shared": "file:../shared"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

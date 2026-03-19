@@ -1,32 +1,11 @@
-export interface Artifact {
-  path: string;
-  type: 'file' | 'directory';
-  content?: string;
-}
+// Re-export shared types — single source of truth is kapow-shared
+export type {
+  Task, Phase, ArchitectureDoc, Artifact,
+  TaskBuildResult, TaskQAResult, Issue, GateResult,
+} from 'kapow-shared';
 
-export interface Issue {
-  severity: 'critical' | 'major' | 'minor';
-  taskId: string;
-  description: string;
-  file?: string;
-}
-
-export interface TaskQAResult {
-  runId: string;
-  taskId: string;
-  passed: boolean;
-  issues: Issue[];
-  delta: string;
-}
-
-export interface GateResult {
-  runId: string;
-  ciSignal: 'go' | 'no-go' | 'escalate';
-  iteration: number;
-  delta?: string;
-  diagnosis?: string;
-  artifacts?: Artifact[];
-}
+// Gate-local types (not shared across services)
+import type { TaskQAResult, Artifact } from 'kapow-shared';
 
 export interface GateRequest {
   runId: string;

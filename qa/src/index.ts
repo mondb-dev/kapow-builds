@@ -1,18 +1,14 @@
-import express, { Request, Response, NextFunction } from 'express';
+import { createAgent } from 'kapow-shared';
 import { runTaskQA } from './qa.js';
 import type { TaskQARequest } from './types.js';
 
-const app = express();
-app.use(express.json({ limit: '50mb' }));
-
-const PORT = parseInt(process.env.PORT ?? '3003', 10);
-
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'kapow-qa' });
+const agent = createAgent('qa', {
+  requiresAI: true,
+  bodyLimit: '50mb',
 });
 
 // Per-task QA endpoint
-app.post('/qa-task', async (req: Request, res: Response, next: NextFunction) => {
+agent.app.post('/qa-task', async (req, res, next) => {
   try {
     const body = req.body as TaskQARequest;
 
@@ -45,21 +41,4 @@ app.post('/qa-task', async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
-// Error handler
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('QA error:', err);
-  res.status(500).json({ error: err.message });
-});
-
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('FATAL: ANTHROPIC_API_KEY is required');
-  process.exit(1);
-}
-if (isNaN(PORT)) {
-  console.error('FATAL: PORT must be numeric');
-  process.exit(1);
-}
-
-app.listen(PORT, () => {
-  console.log(`kapow-qa listening on port ${PORT}`);
-});
+agent.start();
