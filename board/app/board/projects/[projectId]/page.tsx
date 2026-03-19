@@ -84,9 +84,11 @@ async function createRepo(formData: FormData) {
   const id = formData.get('id') as string;
   const name = formData.get('name') as string;
   const description = formData.get('description') as string;
+  const visibility = formData.get('visibility') as string;
   if (!id || !name) return;
 
-  const result = await createGitHubRepo(name, description);
+  const isPrivate = visibility !== 'public';
+  const result = await createGitHubRepo(name, description, isPrivate);
   if (result) {
     await db.project.update({
       where: { id },
@@ -212,10 +214,17 @@ export default async function ProjectDetailPage({ params }: Params) {
           ) : (
             <div className="mt-1 flex items-center gap-3">
               {isGitHubConfigured() ? (
-                <form action={createRepo} className="flex gap-2">
+                <form action={createRepo} className="flex items-center gap-2">
                   <input type="hidden" name="id" value={project.id} />
                   <input type="hidden" name="name" value={project.name} />
                   <input type="hidden" name="description" value={project.description ?? ''} />
+                  <select
+                    name="visibility"
+                    className="bg-gray-900 border border-gray-800 rounded-md px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="private">Private</option>
+                    <option value="public">Public</option>
+                  </select>
                   <button
                     type="submit"
                     className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-md"
