@@ -56,7 +56,8 @@ export function Board({ initialCards, currentUserId, currentUserName }: BoardPro
       const res = await fetch('/api/cards');
       if (res.ok) {
         const data = await res.json();
-        setCards(data);
+        const arr = Array.isArray(data) ? data : data.cards;
+        if (Array.isArray(arr)) setCards(arr);
       }
     } catch {
       // silent fail — don't disrupt the UI
