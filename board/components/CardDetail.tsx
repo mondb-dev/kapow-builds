@@ -136,14 +136,23 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
         body: JSON.stringify(body),
       });
 
+      const text = await res.text();
       if (!res.ok) {
-        const data = await res.json();
-        setAssignError(data.error ?? 'Assignment failed');
+        try {
+          const data = JSON.parse(text);
+          setAssignError(data.error ?? 'Assignment failed');
+        } catch {
+          setAssignError(`Assignment failed (${res.status})`);
+        }
         return;
       }
 
-      const updated = await res.json();
-      setCard(updated);
+      if (text) {
+        const updated = JSON.parse(text);
+        setCard(updated);
+      }
+      // Reload the page to get fresh data
+      window.location.reload();
     } catch (err) {
       setAssignError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
