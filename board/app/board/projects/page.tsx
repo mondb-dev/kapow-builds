@@ -3,22 +3,8 @@ import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import Link from 'next/link';
 
+
 export const dynamic = 'force-dynamic';
-
-async function createProject() {
-  'use server';
-  const session = await auth();
-  if (!session?.user) return;
-
-  await db.project.create({
-    data: {
-      name: `Project ${new Date().toLocaleDateString()}`,
-      members: { connect: { id: session.user.id } },
-    },
-  });
-
-  redirect('/board/projects');
-}
 
 export default async function ProjectsPage() {
   const session = await auth();
@@ -88,13 +74,11 @@ export default async function ProjectsPage() {
 
 function NewProjectButton() {
   return (
-    <form action={createProject}>
-      <button
-        type="submit"
-        className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded-md font-medium transition-colors"
-      >
-        + New Project
-      </button>
-    </form>
+    <Link
+      href="/board/projects/new"
+      className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded-md font-medium transition-colors"
+    >
+      + New Project
+    </Link>
   );
 }
