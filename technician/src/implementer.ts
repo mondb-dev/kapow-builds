@@ -1,9 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import { randomUUID } from 'crypto';
 import type { BuildToolRequest, BuildToolResult, ToolDefinition } from './types.js';
 import { upsertTool, updateToolStatus } from './registry.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const SYSTEM_PROMPT = `You are the Implementer Agent — the second half of the Technician team.
 
@@ -52,9 +52,9 @@ export async function buildTool(request: BuildToolRequest): Promise<BuildToolRes
   upsertTool(toolDraft);
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8192,
+    const response = await provider.chat({
+      model: models.balanced,
+      maxTokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -65,7 +65,7 @@ export async function buildTool(request: BuildToolRequest): Promise<BuildToolRes
     });
 
     const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
       .map((b) => b.text)
       .join('');
 

@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import { loadTools, upsertTool } from './registry.js';
 import { researchTool } from './researcher.js';
 import { buildTool } from './implementer.js';
@@ -8,7 +8,7 @@ import type {
   ToolDefinition, ResearchResult,
 } from './types.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const TRIAGE_PROMPT = `You are the Technician Triage Agent for the Kapow development pipeline.
 
@@ -109,9 +109,9 @@ async function triageRequest(request: ToolRequest, existingTools: ToolDefinition
     `- [${t.id}] ${t.name}: ${t.description} (tags: ${t.tags.join(', ')})`
   ).join('\n');
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
+  const response = await provider.chat({
+    model: models.balanced,
+    maxTokens: 2048,
     system: TRIAGE_PROMPT,
     messages: [{
       role: 'user',
@@ -120,7 +120,7 @@ async function triageRequest(request: ToolRequest, existingTools: ToolDefinition
   });
 
   const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
     .map((b) => b.text)
     .join('');
 

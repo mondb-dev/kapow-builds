@@ -1,8 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import type { ScanRequest, ScanResult, SecurityAlert } from './types.js';
 import { createAlert } from './auditor.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const SYSTEM_PROMPT = `You are the Security Scanner — an AI-powered security analysis agent for the Kapow development pipeline.
 
@@ -31,9 +31,9 @@ Do NOT flag:
 - Internal service-to-service HTTP (expected in Docker networks)`;
 
 export async function scanContent(request: ScanRequest): Promise<ScanResult> {
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
+  const response = await provider.chat({
+    model: models.balanced,
+    maxTokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -44,7 +44,7 @@ export async function scanContent(request: ScanRequest): Promise<ScanResult> {
   });
 
   const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
     .map((b) => b.text)
     .join('');
 

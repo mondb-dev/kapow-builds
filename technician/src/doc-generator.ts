@@ -1,8 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import type { ToolDefinition, ToolDoc } from './types.js';
 import { loadTools } from './registry.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const SYSTEM_PROMPT = `You are the Documentation Agent for the Kapow tool registry.
 
@@ -28,9 +28,9 @@ export async function generateDoc(tool: ToolDefinition): Promise<ToolDoc> {
   const allTools = loadTools().filter((t) => t.status === 'ready' && t.id !== tool.id);
   const toolIndex = allTools.map((t) => `[${t.id}] ${t.name}: ${t.description}`).join('\n');
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
+  const response = await provider.chat({
+    model: models.balanced,
+    maxTokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [{
       role: 'user',
@@ -39,7 +39,7 @@ export async function generateDoc(tool: ToolDefinition): Promise<ToolDoc> {
   });
 
   const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
     .map((b) => b.text)
     .join('');
 

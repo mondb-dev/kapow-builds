@@ -1,8 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import type { ResearchRequest, ResearchResult, ToolParameter } from './types.js';
 import { loadTools } from './registry.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const SYSTEM_PROMPT = `You are the Research Agent — the first half of the Technician team.
 
@@ -33,9 +33,9 @@ export async function researchTool(request: ResearchRequest): Promise<ResearchRe
     ? `\n\nExisting tools in the registry:\n${existingTools.map((t) => `- ${t.name}: ${t.description} [${t.status}]`).join('\n')}`
     : '\n\nNo existing tools in the registry.';
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
+  const response = await provider.chat({
+    model: models.balanced,
+    maxTokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -46,7 +46,7 @@ export async function researchTool(request: ResearchRequest): Promise<ResearchRe
   });
 
   const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
     .map((b) => b.text)
     .join('');
 

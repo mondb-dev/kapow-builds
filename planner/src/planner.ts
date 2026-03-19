@@ -1,8 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import { randomUUID } from 'crypto';
 import type { ProjectPlan, Phase, ArchitectureDoc } from './types.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const SYSTEM_PROMPT = `You are the Planner — a pragmatic tech lead who has shipped dozens of products and seen every way a project can go sideways.
 
@@ -74,9 +74,9 @@ export async function createProjectPlan(
 
   userParts.push('', `Client Brief:\n${brief}`);
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8192,
+  const message = await provider.chat({
+    model: models.balanced,
+    maxTokens: 8192,
     system: SYSTEM_PROMPT,
     messages: [
       {

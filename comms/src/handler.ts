@@ -1,5 +1,4 @@
 import axios from 'axios';
-import Anthropic from '@anthropic-ai/sdk';
 import { createProject } from 'kapow-db/projects';
 import { getProjectRecipes, formatRecipesForPrompt } from 'kapow-db/recipes';
 import { getProjectPreferences, formatPreferencesForPrompt } from 'kapow-db/preferences';
@@ -12,8 +11,6 @@ import type { ConversationState, UserIntent } from './types.js';
 
 const ACTIONS_URL = process.env.ACTIONS_URL ?? 'http://localhost:3000';
 const PLANNER_URL = process.env.PLANNER_URL ?? 'http://localhost:3001';
-
-const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── Reply callback type (injected by channel adapter) ────────────────
 export type ReplyFn = (text: string) => Promise<void>;

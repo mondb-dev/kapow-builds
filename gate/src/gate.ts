@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import { MAX_ITERATIONS, type TaskQAResult, type GateResult, type Artifact } from './types.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const DIAGNOSIS_SYSTEM_PROMPT = `You are the Gate — the final decision-maker in the build pipeline. You have seen the plan, the build, and the QA results across ${MAX_ITERATIONS} retry attempts for a single task, and it still failed.
 
@@ -20,9 +20,9 @@ async function generateDiagnosis(qaResult: TaskQAResult, iteration: number): Pro
     .map((i) => `[${i.severity.toUpperCase()}] ${i.taskId}: ${i.description}${i.file ? ` (${i.file})` : ''}`)
     .join('\n');
 
-  const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
+  const message = await provider.chat({
+    model: models.fast,
+    maxTokens: 1024,
     system: DIAGNOSIS_SYSTEM_PROMPT,
     messages: [
       {

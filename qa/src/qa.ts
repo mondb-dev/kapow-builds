@@ -1,11 +1,12 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
+import type { AIToolDef, AIMessage, AIContentBlock } from 'kapow-shared';
 import type { TaskQARequest, TaskQAResult, Issue, ArchitectureDoc, AvailableTool } from './types.js';
 import { dispatchTool, allowedTools, registerCoreQATools } from './tool-dispatch.js';
 
 // Register core tools on module load
 registerCoreQATools();
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const MAX_TOOL_ITERATIONS = 30;
 
@@ -93,7 +94,7 @@ function getDefaultQATools(): AvailableTool[] {
   ];
 }
 
-function buildClaudeTools(availableTools: AvailableTool[]): Anthropic.Tool[] {
+function buildClaudeTools(availableTools: AvailableTool[]): AIToolDef[] {
   // QA only gets read-safe tools
   const filtered = availableTools.filter((t) => QA_ALLOWED_TOOLS.has(t.name));
 
@@ -157,7 +158,7 @@ export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
   ].join('\n');
 
   const systemPrompt = buildQAPrompt(architecture, availableTools);
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userContent }];
+  const messages: AIMessage[] = [{ role: 'user', content: userContent }];
   let iterations = 0;
 
   while (true) {
@@ -176,18 +177,18 @@ export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
     }
     iterations++;
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8192,
+    const response = await provider.chat({
+      model: models.balanced,
+      maxTokens: 8192,
       system: systemPrompt,
       tools: claudeTools,
       messages,
     });
 
-    if (response.stop_reason === 'tool_use') {
+    if (response.stopReason === 'tool_use') {
       messages.push({ role: 'assistant', content: response.content });
 
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      const toolResults: AIContentBlock[] = [];
       for (const block of response.content) {
         if (block.type === 'tool_use') {
           const result = await handleToolCall(

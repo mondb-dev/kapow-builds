@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getAI } from 'kapow-shared';
 import type { UserIntent, ConversationPhase } from './types.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { provider, models } = getAI();
 
 const SYSTEM_PROMPT = `You are an intent classifier for Kapow, an AI development pipeline.
 
@@ -39,9 +39,9 @@ export async function detectIntent(
   message: string,
   phase: ConversationPhase,
 ): Promise<UserIntent> {
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 512,
+  const response = await provider.chat({
+    model: models.fast,
+    maxTokens: 512,
     system: SYSTEM_PROMPT,
     messages: [{
       role: 'user',
@@ -50,7 +50,7 @@ export async function detectIntent(
   });
 
   const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
     .map((b) => b.text)
     .join('');
 
