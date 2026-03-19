@@ -31,6 +31,7 @@ async function runPipelineBackground(cardId: string, runId: string, plan: string
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
+  try {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -48,8 +49,8 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (assigneeType === 'AGENT') {
     const runId = randomUUID();
 
-    const result = await db.card.updateMany({
-      where: { id: cardId, status: 'BACKLOG' },
+    await db.card.update({
+      where: { id: cardId },
       data: {
         assigneeType: 'AGENT',
         assigneeId: null,
@@ -57,10 +58,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         runId,
       },
     });
-
-    if (result.count === 0) {
-      return NextResponse.json({ error: 'Card is already assigned or not in BACKLOG' }, { status: 409 });
-    }
 
     const updated = await db.card.findUnique({
       where: { id: cardId },
@@ -92,17 +89,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const result = await db.card.updateMany({
-      where: { id: cardId, status: 'BACKLOG' },
+    await db.card.update({
+      where: { id: cardId },
       data: {
         assigneeType: 'HUMAN',
         assigneeId: targetUserId,
       },
     });
-
-    if (result.count === 0) {
-      return NextResponse.json({ error: 'Card is already assigned or not in BACKLOG' }, { status: 409 });
-    }
 
     const updated = await db.card.findUnique({
       where: { id: cardId },
@@ -124,4 +117,9 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   return NextResponse.json({ error: 'assigneeType must be AGENT or HUMAN' }, { status: 400 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[assign] Error:', msg, err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
