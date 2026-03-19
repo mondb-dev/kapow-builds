@@ -1,0 +1,19 @@
+{
+  "name": "kapow-tool-client",
+  "version": "1.0.0",
+  "description": "Shared client for agents to discover, request, and invoke tools from the Kapow tool registry",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "axios": "^1.7.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}

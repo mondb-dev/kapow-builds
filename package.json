@@ -1,0 +1,24 @@
+{
+  "name": "kapow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-agent AI development pipeline",
+  "type": "module",
+  "scripts": {
+    "kapow": "tsx kapow.ts",
+    "install:all": "tsx kapow.ts install",
+    "dev": "tsx kapow.ts dev",
+    "build": "tsx kapow.ts build",
+    "stop": "tsx kapow.ts stop",
+    "status": "tsx kapow.ts status",
+    "db:migrate": "tsx kapow.ts db:migrate",
+    "db:push": "tsx kapow.ts db:push",
+    "db:seed": "tsx kapow.ts db:seed",
+    "db:studio": "tsx kapow.ts db:studio"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

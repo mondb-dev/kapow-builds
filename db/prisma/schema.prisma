@@ -1,0 +1,350 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// GLOBAL SCOPE — shared across all projects
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── Users ────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  name         String?
+  email        String    @unique
+  image        String?
+  githubId     String    @unique
+  cards        Card[]    @relation("AssignedCards")
+  createdCards Card[]    @relation("CreatedCards")
+  projects     Project[] @relation("ProjectMembers")
+  createdAt    DateTime  @default(now())
+}
+
+// ── Recipes (global learned patterns) ────────────────────────────────
+
+model Recipe {
+  id        String   @id
+  name      String
+  category  String
+  tags      String[]
+  content   String   @db.Text
+  source    String   // 'seed' | runId that created/updated it
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Per-project overrides
+  projectOverrides ProjectRecipe[]
+
+  @@index([category])
+}
+
+// ── Preferences (global defaults) ────────────────────────────────────
+
+model Preference {
+  id        String   @id
+  category  String   @unique // 'website', 'api', 'mobile', 'cli', 'general'
+  settings  Json     // PreferenceSet as JSON
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Per-project overrides
+  projectOverrides ProjectPreference[]
+}
+
+// ── Tool Registry (managed by Technician, shared across projects) ────
+
+model Tool {
+  id             String     @id
+  name           String
+  description    String
+  version        Int        @default(1)
+  status         ToolStatus @default(BUILDING)
+  parameters     Json       // ToolParameter[]
+  returnType     String
+  implementation String     @db.Text
+  testCode       String     @db.Text
+  tags           String[]
+  doc            Json?      // ToolDoc
+  createdBy      String     // runId
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status])
+  @@index([name])
+}
+
+enum ToolStatus {
+  RESEARCHING
+  BUILDING
+  TESTING
+  READY
+  FAILED
+  DEPRECATED
+}
+
+// ── Security (global observation) ────────────────────────────────────
+
+model SecurityAlert {
+  id           String        @id
+  runId        String?
+  projectId    String?
+  project      Project?      @relation(fields: [projectId], references: [id])
+  service      String
+  severity     AlertSeverity
+  category     String
+  message      String
+  details      String        @db.Text
+  acknowledged Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+
+  @@index([severity])
+  @@index([runId])
+  @@index([projectId])
+  @@index([acknowledged])
+}
+
+model AuditEntry {
+  id        String   @id
+  runId     String?
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+  service   String
+  action    String
+  details   String   @db.Text
+  riskScore Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([runId])
+  @@index([projectId])
+  @@index([service])
+  @@index([riskScore])
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+// ── Conversations (Slack/comms thread state) ─────────────────────────
+
+model Conversation {
+  id          String   @id @default(cuid())
+  channelId   String
+  threadTs    String
+  userId      String
+  userName    String
+  phase       String   @default("idle")  // ConversationPhase
+  projectName String?
+  projectId   String?
+  runId       String?
+  scope       String?  @db.Text
+  plan        String?  @db.Text
+  planDetail  Json?
+  messages    Json     @default("[]")     // ConversationMessage[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([channelId, threadTs])
+  @@index([userId])
+  @@index([phase])
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROJECT SCOPE — scoped per project
+// ═══════════════════════════════════════════════════════════════════════
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  repoUrl     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members     User[]              @relation("ProjectMembers")
+  cards       Card[]
+  runs        Run[]
+  recipes     ProjectRecipe[]
+  preferences ProjectPreference[]
+  alerts      SecurityAlert[]
+  auditLog    AuditEntry[]
+
+  @@index([name])
+}
+
+// ── Per-Project Recipe Overrides ─────────────────────────────────────
+
+model ProjectRecipe {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recipeId  String?
+  recipe    Recipe?  @relation(fields: [recipeId], references: [id])
+  // If recipeId is null, this is a project-only recipe (not derived from global)
+  name      String
+  category  String
+  tags      String[]
+  content   String   @db.Text
+  source    String
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, recipeId])
+  @@index([projectId])
+  @@index([category])
+}
+
+// ── Per-Project Preference Overrides ─────────────────────────────────
+
+model ProjectPreference {
+  id           String     @id @default(cuid())
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  preferenceId String?
+  preference   Preference? @relation(fields: [preferenceId], references: [id])
+  category     String
+  settings     Json       // Merged with global — project settings override globals
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([projectId, category])
+  @@index([projectId])
+}
+
+// ── Pipeline Runs ────────────────────────────────────────────────────
+
+model Run {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  plan      String    @db.Text       // Original brief/plan
+  status    RunStatus @default(PENDING)
+  result    Json?                     // PipelineResult
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  logs      RunLog[]
+  artifacts RunArtifact[]
+  cards     Card[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+enum RunStatus {
+  PENDING
+  PLANNING
+  BUILDING
+  QA
+  GATE
+  DONE
+  FAILED
+}
+
+// ── Run Logs (pipeline progress stream) ──────────────────────────────
+
+model RunLog {
+  id        String      @id @default(cuid())
+  runId     String
+  run       Run         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  service   String      // 'planner', 'builder', 'qa', 'gate', 'actions'
+  level     LogLevel    @default(INFO)
+  message   String      @db.Text
+  metadata  Json?
+  createdAt DateTime    @default(now())
+
+  @@index([runId])
+  @@index([service])
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+// ── Run Artifacts (build outputs) ────────────────────────────────────
+
+model RunArtifact {
+  id          String   @id @default(cuid())
+  runId       String
+  run         Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  taskId      String
+  path        String
+  type        String   // 'file' | 'directory'
+  size        Int?
+  sandboxPath String   // Absolute path on disk
+  createdAt   DateTime @default(now())
+
+  @@index([runId])
+  @@index([taskId])
+}
+
+// ── Cards (task tracking on board) ───────────────────────────────────
+
+model Card {
+  id           String       @id @default(cuid())
+  title        String
+  description  String
+  status       CardStatus   @default(BACKLOG)
+  assigneeType AssigneeType @default(UNASSIGNED)
+  assigneeId   String?
+  assignee     User?        @relation("AssignedCards", fields: [assigneeId], references: [id])
+  creatorId    String?
+  creator      User?        @relation("CreatedCards", fields: [creatorId], references: [id])
+  projectId    String?
+  project      Project?     @relation(fields: [projectId], references: [id])
+  runId        String?
+  run          Run?         @relation(fields: [runId], references: [id])
+  phaseId      String?
+  taskId       String?
+  repoUrl      String?
+  deployUrl    String?
+  events       CardEvent[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([runId])
+  @@index([taskId])
+  @@index([projectId])
+}
+
+model CardEvent {
+  id        String    @id @default(cuid())
+  cardId    String
+  card      Card      @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  message   String
+  type      EventType @default(INFO)
+  createdAt DateTime  @default(now())
+}
+
+enum CardStatus {
+  BACKLOG
+  IN_PROGRESS
+  QA
+  DONE
+  FAILED
+}
+
+enum AssigneeType {
+  UNASSIGNED
+  HUMAN
+  AGENT
+}
+
+enum EventType {
+  INFO
+  SUCCESS
+  ERROR
+  PROGRESS
+}

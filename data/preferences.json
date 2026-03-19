@@ -1,0 +1,39 @@
+{
+  "preferences": {
+    "website": {
+      "framework": "Next.js 14+ (App Router)",
+      "language": "TypeScript (strict)",
+      "styling": "Tailwind CSS",
+      "cms": "Sanity.io",
+      "hosting": "Vercel",
+      "notes": "Use App Router over Pages Router. Server components by default, client components only when needed."
+    },
+    "api": {
+      "framework": "Express.js",
+      "language": "TypeScript (strict)",
+      "database": "PostgreSQL with Prisma ORM",
+      "auth": "JWT with refresh tokens",
+      "hosting": "Docker on Oracle Cloud free tier",
+      "notes": "Always include /health endpoint. Validate env vars at startup."
+    },
+    "mobile": {
+      "framework": "React Native with Expo",
+      "language": "TypeScript",
+      "state": "Zustand",
+      "navigation": "Expo Router",
+      "notes": "Prefer Expo managed workflow unless native modules are required."
+    },
+    "cli": {
+      "language": "TypeScript with tsx",
+      "args": "commander.js",
+      "notes": "Compile to single file with tsup for distribution."
+    },
+    "general": {
+      "packageManager": "npm",
+      "linting": "ESLint + Prettier",
+      "testing": "Vitest for unit tests, Playwright for E2E",
+      "ci": "GitHub Actions",
+      "notes": "Prefer established libraries over custom implementations. Fewer dependencies is better."
+    }
+  }
+}
