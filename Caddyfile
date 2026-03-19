@@ -1,48 +1,81 @@
-# Replace with your domain or use :80 for HTTP-only
+# Kapow Reverse Proxy
+# Only the board UI and comms webhook are public.
+# All internal agent APIs are blocked from external access.
+
 {$KAPOW_DOMAIN:kapow.example.com} {
-	# Board UI
+
+	# ── Public routes ─────────────────────────────────────────────
+
+	# Board UI (Next.js)
 	handle /board* {
 		reverse_proxy board:3005
 	}
 
-	# Agent API endpoints
-	handle /api/planner/* {
-		uri strip_prefix /api/planner
-		reverse_proxy planner:3001
+	# Board API routes (auth is handled by NextAuth inside the board)
+	handle /api/auth/* {
+		reverse_proxy board:3005
+	}
+	handle /api/cards/* {
+		reverse_proxy board:3005
+	}
+	handle /api/projects/* {
+		reverse_proxy board:3005
+	}
+	handle /api/uploads/* {
+		reverse_proxy board:3005
+	}
+	handle /api/runs/* {
+		reverse_proxy board:3005
+	}
+	handle /api/logs/* {
+		reverse_proxy board:3005
 	}
 
-	handle /api/builder/* {
-		uri strip_prefix /api/builder
-		reverse_proxy builder:3002
-	}
-
-	handle /api/qa/* {
-		uri strip_prefix /api/qa
-		reverse_proxy qa:3003
-	}
-
-	handle /api/gate/* {
-		uri strip_prefix /api/gate
-		reverse_proxy gate:3004
-	}
-
-	handle /api/technician/* {
-		uri strip_prefix /api/technician
-		reverse_proxy technician:3006
-	}
-
-	handle /api/security/* {
-		uri strip_prefix /api/security
-		reverse_proxy security:3007
-	}
-
-	handle /api/comms/* {
+	# Comms webhook (external platforms POST here)
+	handle /api/comms/webhook {
 		uri strip_prefix /api/comms
 		reverse_proxy comms:3008
 	}
 
-	# Actions orchestrator (default)
+	# Comms health (for monitoring)
+	handle /api/comms/health {
+		uri strip_prefix /api/comms
+		reverse_proxy comms:3008
+	}
+
+	# ── Blocked routes ────────────────────────────────────────────
+	# Internal agent APIs are NOT exposed publicly.
+	# They communicate over the Docker network only.
+
+	handle /api/planner/* {
+		respond "Forbidden" 403
+	}
+	handle /api/builder/* {
+		respond "Forbidden" 403
+	}
+	handle /api/qa/* {
+		respond "Forbidden" 403
+	}
+	handle /api/gate/* {
+		respond "Forbidden" 403
+	}
+	handle /api/technician/* {
+		respond "Forbidden" 403
+	}
+	handle /api/security/* {
+		respond "Forbidden" 403
+	}
+
+	# Block direct access to actions pipeline trigger
+	handle /pipeline {
+		respond "Forbidden" 403
+	}
+	handle /bus/* {
+		respond "Forbidden" 403
+	}
+
+	# ── Default: board catch-all ──────────────────────────────────
 	handle /* {
-		reverse_proxy actions:3000
+		reverse_proxy board:3005
 	}
 }

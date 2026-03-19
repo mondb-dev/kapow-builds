@@ -5,6 +5,7 @@ export interface ServiceEndpoint {
   name: string;
   url: string;
   port: number;
+  healthPath?: string; // defaults to /health
 }
 
 /**
@@ -34,7 +35,7 @@ function loadServices(): ServiceEndpoint[] {
     { name: 'builder',    url: process.env.BUILDER_URL    ?? 'http://localhost:3002', port: 3002 },
     { name: 'qa',         url: process.env.QA_URL         ?? 'http://localhost:3003', port: 3003 },
     { name: 'gate',       url: process.env.GATE_URL       ?? 'http://localhost:3004', port: 3004 },
-    { name: 'board',      url: process.env.BOARD_URL      ?? 'http://localhost:3005', port: 3005 },
+    { name: 'board',      url: process.env.BOARD_URL      ?? 'http://localhost:3005', port: 3005, healthPath: '/api/health' },
     { name: 'technician', url: process.env.TECHNICIAN_URL ?? 'http://localhost:3006', port: 3006 },
     { name: 'comms',      url: process.env.COMMS_URL      ?? 'http://localhost:3008', port: 3008 },
   ];
@@ -45,7 +46,7 @@ const monitoredServices = loadServices();
 export async function checkServiceHealth(endpoint: ServiceEndpoint): Promise<ServiceHealth> {
   const start = Date.now();
   try {
-    await axios.get(`${endpoint.url}/health`, { timeout: 5000 });
+    await axios.get(`${endpoint.url}${endpoint.healthPath ?? '/health'}`, { timeout: 5000 });
     return {
       service: endpoint.name,
       url: endpoint.url,

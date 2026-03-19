@@ -127,6 +127,13 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 // Start health monitor on boot
 startHealthMonitor(30_000);
 
+// Start bus monitoring if BUS_URL is configured
+if (process.env.BUS_URL) {
+  import('./bus-integration.js').then((m) => m.startBusMonitoring()).catch((err) => {
+    console.warn(`[security] Bus monitoring disabled: ${err}`);
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`kapow-security listening on port ${PORT}`);
 });

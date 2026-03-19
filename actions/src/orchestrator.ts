@@ -13,6 +13,7 @@ import {
   getProjectPreferences, getGlobalPreferences, formatPreferencesForPrompt,
 } from 'kapow-db/preferences';
 import { loadPipelineConfig, type PipelineStage } from './pipeline-config.js';
+import { updateRunStatus, addRunArtifact, addRunLog } from 'kapow-db/runs';
 
 // ── Config ───────────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ export async function runPipeline(
   }
 
   await notifySecurity(runId, 'actions', 'pipeline_start', { plan: plan.slice(0, 500) });
+  updateRunStatus(runId, 'planning').catch(() => {});
 
   // ── Step 1: Planner ─────────────────────────────────────────────
   onProgress(`[${runId}] Starting planner...`);
@@ -151,6 +153,7 @@ export async function runPipeline(
       await board.updateCardStatus(cardId, 'IN_PROGRESS');
       await board.addCardEvent(cardId, { message: `${buildStage.name} started`, type: 'PROGRESS' });
       onProgress(`[${runId}] Building task ${task.id}...`);
+      updateRunStatus(runId, 'building').catch(() => {});
 
       let buildResult: TaskBuildResult;
       try {
@@ -184,6 +187,7 @@ export async function runPipeline(
           await board.updateCardStatus(cardId, 'QA');
           await board.addCardEvent(cardId, { message: `${verifyStage.name} (iteration ${iteration})`, type: 'PROGRESS' });
           onProgress(`[${runId}] ${verifyStage.name} checking task ${task.id} (iteration ${iteration})...`);
+          updateRunStatus(runId, 'qa').catch(() => {});
 
           let qaResult: TaskQAResult;
           try {
@@ -292,6 +296,12 @@ export async function runPipeline(
 
   if (failedTasks.length === 0) {
     onProgress(`[${runId}] Pipeline complete. All tasks passed.`);
+    updateRunStatus(runId, 'done', { completedTasks, failedTasks: [] }).catch(() => {});
+
+    // Persist artifacts
+    for (const artifact of allArtifacts) {
+      addRunArtifact(runId, completedTasks[completedTasks.length - 1] ?? '', artifact.path, artifact.type, sandboxPath ?? '', undefined).catch(() => {});
+    }
 
     try {
       const newRecipes = extractRecipes(projectPlan, runId);
@@ -309,6 +319,7 @@ export async function runPipeline(
   }
 
   onProgress(`[${runId}] Pipeline finished with ${failedTasks.length} failed tasks: ${failedTasks.join(', ')}`);
+  updateRunStatus(runId, 'failed', { completedTasks, failedTasks }).catch(() => {});
   return {
     success: false,
     artifacts: allArtifacts,
