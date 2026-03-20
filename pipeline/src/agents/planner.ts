@@ -91,7 +91,7 @@ export async function createProjectPlan(
 
   const message = await provider.chat({
     model: models.balanced,
-    maxTokens: 16384,
+    maxTokens: 32768,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -116,11 +116,14 @@ export async function createProjectPlan(
     architecture: ArchitectureDoc;
   };
 
-  // Strip markdown code fences if present
+  // Strip markdown code fences if present (handles truncated responses without closing fence)
   let rawText = content.text.trim();
-  const fenceMatch = rawText.match(/^```(?:json)?\s*\n?([\s\S]*?)```\s*$/);
-  if (fenceMatch) {
-    rawText = fenceMatch[1].trim();
+  if (rawText.startsWith('```')) {
+    // Remove opening fence line
+    rawText = rawText.replace(/^```(?:json)?\s*\n?/, '');
+    // Remove closing fence if present
+    rawText = rawText.replace(/\n?```\s*$/, '');
+    rawText = rawText.trim();
   }
 
   try {
