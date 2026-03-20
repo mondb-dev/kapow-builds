@@ -91,7 +91,7 @@ export async function createProjectPlan(
 
   const message = await provider.chat({
     model: models.balanced,
-    maxTokens: 8192,
+    maxTokens: 16384,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -116,15 +116,22 @@ export async function createProjectPlan(
     architecture: ArchitectureDoc;
   };
 
+  // Strip markdown code fences if present
+  let rawText = content.text.trim();
+  const fenceMatch = rawText.match(/^```(?:json)?\s*\n?([\s\S]*?)```\s*$/);
+  if (fenceMatch) {
+    rawText = fenceMatch[1].trim();
+  }
+
   try {
-    parsed = JSON.parse(content.text);
+    parsed = JSON.parse(rawText);
   } catch (err) {
-    const repaired = normalizePlannerJson(content.text);
+    const repaired = normalizePlannerJson(rawText);
 
     try {
       parsed = JSON.parse(repaired);
     } catch (repairErr) {
-      throw new Error(`Planner returned invalid JSON: ${repairErr}\n\nRaw response:\n${content.text}`);
+      throw new Error(`Planner returned invalid JSON: ${repairErr}\n\nRaw response:\n${rawText.slice(0, 500)}`);
     }
   }
 
