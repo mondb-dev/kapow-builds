@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { getInternalAuthHeaders } from '@/lib/internal';
+import { userCanAccessRun } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +19,10 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 
   const { runId } = await params;
+
+  if (!(await userCanAccessRun(session.user.id, runId)) && !session.user.isAdmin) {
+    return new Response('Forbidden', { status: 403 });
+  }
 
   const card = await db.card.findFirst({ where: { runId } });
   if (!card) {
@@ -51,6 +57,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       const poll = async () => {
         try {
           const res = await fetch(`${KAPOW_URL}/runs/${runId}/status`, {
+            headers: getInternalAuthHeaders(),
             signal: AbortSignal.timeout(5000),
           });
 

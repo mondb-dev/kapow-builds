@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { createGitHubRepo, isGitHubConfigured } from '@/lib/github';
+import { userCanAccessProject } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ async function renameProject(formData: FormData) {
   const id = formData.get('id') as string;
   const name = formData.get('name') as string;
   if (!id || !name?.trim()) return;
+  if (!(await userCanAccessProject(session.user.id, id)) && !session.user.isAdmin) return;
 
   await db.project.update({
     where: { id },
@@ -37,6 +39,7 @@ async function updateDescription(formData: FormData) {
   const id = formData.get('id') as string;
   const description = formData.get('description') as string;
   if (!id) return;
+  if (!(await userCanAccessProject(session.user.id, id)) && !session.user.isAdmin) return;
 
   await db.project.update({
     where: { id },
@@ -54,6 +57,7 @@ async function updateRepoUrl(formData: FormData) {
   const id = formData.get('id') as string;
   const repoUrl = formData.get('repoUrl') as string;
   if (!id) return;
+  if (!(await userCanAccessProject(session.user.id, id)) && !session.user.isAdmin) return;
 
   const url = repoUrl?.trim() || null;
   // Validate: must be empty (unlink) or a valid URL
@@ -74,6 +78,7 @@ async function deleteProject(formData: FormData) {
 
   const id = formData.get('id') as string;
   if (!id) return;
+  if (!(await userCanAccessProject(session.user.id, id)) && !session.user.isAdmin) return;
 
   await db.project.delete({ where: { id } });
 
@@ -90,6 +95,7 @@ async function createRepo(formData: FormData) {
   const description = formData.get('description') as string;
   const visibility = formData.get('visibility') as string;
   if (!id || !name) return;
+  if (!(await userCanAccessProject(session.user.id, id)) && !session.user.isAdmin) return;
 
   const isPrivate = visibility !== 'public';
   const result = await createGitHubRepo(name, description, isPrivate);
@@ -108,6 +114,10 @@ export default async function ProjectDetailPage({ params }: Params) {
   if (!session?.user) redirect('/login');
 
   const { projectId } = await params;
+
+  if (!(await userCanAccessProject(session.user.id, projectId)) && !session.user.isAdmin) {
+    notFound();
+  }
 
   const project = await db.project.findUnique({
     where: { id: projectId },

@@ -54,19 +54,14 @@ interface Service {
   port: number;
 }
 
-const AGENTS: Service[] = [
-  { name: 'planner',    dir: 'planner',    port: 3001 },
-  { name: 'builder',    dir: 'builder',    port: 3002 },
-  { name: 'qa',         dir: 'qa',         port: 3003 },
-  { name: 'gate',       dir: 'gate',       port: 3004 },
+// 3-service architecture: pipeline + technician + board
+const SERVICES: Service[] = [
+  { name: 'pipeline',   dir: 'pipeline',   port: 3000 },
   { name: 'technician', dir: 'technician', port: 3006 },
-  { name: 'security',   dir: 'security',   port: 3007 },
-  { name: 'comms',      dir: 'comms',      port: 3008 },
-  { name: 'actions',    dir: 'actions',    port: 3000 },
 ];
 
 const BOARD: Service = { name: 'board', dir: 'board', port: 3005 };
-const ALL_SERVICES = [...AGENTS, BOARD];
+const ALL_SERVICES = [...SERVICES, BOARD];
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -115,6 +110,19 @@ function startBackground(name: string, cwd: string, cmd: string, args: string[],
   child.unref();
   writeFileSync(pidFile(name), String(child.pid));
   return child;
+}
+
+function getScopedAIEnv(serviceName: string): Record<string, string> {
+  const prefix = serviceName.toUpperCase();
+  const env: Record<string, string> = {};
+
+  const scopedGemini = process.env[`${prefix}_GEMINI_API_KEY`];
+  const scopedAnthropic = process.env[`${prefix}_ANTHROPIC_API_KEY`];
+
+  if (scopedGemini) env.GEMINI_API_KEY = scopedGemini;
+  if (scopedAnthropic) env.ANTHROPIC_API_KEY = scopedAnthropic;
+
+  return env;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -209,6 +217,8 @@ async function setup() {
 
   console.log('\n  ── Step 3: Board Authentication ──\n');
   envVars['AUTH_SECRET'] = randomBytes(32).toString('base64');
+  envVars['INTERNAL_API_KEY'] = randomBytes(32).toString('hex');
+  envVars['COMMS_WEBHOOK_SECRET'] = randomBytes(32).toString('hex');
   console.log('  AUTH_SECRET auto-generated.\n');
 
   const hasGithubOAuth = await ask('Set up GitHub OAuth for board login? (y/n)', 'n');
@@ -344,12 +354,18 @@ function startDev() {
       if (!existsSync(boardEnv)) {
         try { symlinkSync(ENV_FILE, boardEnv); } catch { /* already exists */ }
       }
-      startBackground(svc.name, cwd, 'npx', ['next', 'dev', '-p', String(svc.port)], {
+      startBackground(svc.name, cwd, 'npx', ['next', 'dev', '-H', '127.0.0.1', '-p', String(svc.port)], {
+        HOST: '127.0.0.1',
         PORT: String(svc.port),
+        SERVICE_NAME: svc.name,
+        ...getScopedAIEnv(svc.name),
       });
     } else {
       startBackground(svc.name, cwd, 'npx', ['tsx', 'src/index.ts'], {
+        HOST: '127.0.0.1',
         PORT: String(svc.port),
+        SERVICE_NAME: svc.name,
+        ...getScopedAIEnv(svc.name),
       });
     }
     console.log(`  kapow-${svc.name.padEnd(12)} → http://localhost:${svc.port}`);

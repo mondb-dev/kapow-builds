@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     name: file.name,
     size: file.size,
     mimeType: file.type,
-    path: filepath,
+    path: `/uploads/${filename}`,
     filename,
   }, { status: 201 });
 }

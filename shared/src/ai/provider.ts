@@ -20,7 +20,7 @@ const ANTHROPIC_MODELS: ModelMap = {
 const GEMINI_MODELS: ModelMap = {
   strong: 'gemini-2.5-pro',
   balanced: 'gemini-2.5-flash',
-  fast: 'gemini-2.0-flash',
+  fast: 'gemini-2.5-flash',
 };
 
 // Allow overrides via env

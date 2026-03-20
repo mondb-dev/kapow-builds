@@ -78,6 +78,8 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
   const [events, setEvents] = useState<CardEventData[]>(initialCard.events);
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [runActionPending, setRunActionPending] = useState<'stop' | 'restart' | null>(null);
+  const [runActionError, setRunActionError] = useState<string | null>(null);
   const eventsEndRef = useRef<HTMLDivElement>(null);
 
   void currentUserName;
@@ -160,7 +162,40 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
     }
   }
 
-  const isAgentRunning = card.assigneeType === 'AGENT' && card.status === 'IN_PROGRESS';
+  async function handleRunAction(action: 'stop' | 'restart') {
+    if (!card.runId) return;
+
+    setRunActionPending(action);
+    setRunActionError(null);
+
+    try {
+      const res = await fetch(`/api/cards/${card.id}/run-control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+
+      const text = await res.text();
+      if (!res.ok) {
+        try {
+          const data = JSON.parse(text);
+          setRunActionError(data.error ?? `${action} failed`);
+        } catch {
+          setRunActionError(`${action} failed (${res.status})`);
+        }
+        return;
+      }
+
+      window.location.reload();
+    } catch (err) {
+      setRunActionError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setRunActionPending(null);
+    }
+  }
+
+  const isAgentRunning = card.assigneeType === 'AGENT' && (card.status === 'IN_PROGRESS' || card.status === 'QA');
+  const canControlRun = card.assigneeType === 'AGENT' && Boolean(card.runId);
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
@@ -263,10 +298,32 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
               Send to Agent
             </button>
           )}
+
+          {canControlRun && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleRunAction('stop')}
+                disabled={runActionPending !== null || !isAgentRunning}
+                className="px-3 py-1.5 text-xs font-medium text-red-300 bg-red-950/40 hover:bg-red-900/40 border border-red-900/60 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {runActionPending === 'stop' ? 'Stopping...' : 'Stop Run'}
+              </button>
+              <button
+                onClick={() => handleRunAction('restart')}
+                disabled={runActionPending !== null}
+                className="px-3 py-1.5 text-xs font-medium text-gray-200 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {runActionPending === 'restart' ? 'Restarting...' : 'Restart Run'}
+              </button>
+            </div>
+          )}
         </div>
 
         {assignError && (
           <p className="text-xs text-red-400">{assignError}</p>
+        )}
+        {runActionError && (
+          <p className="text-xs text-red-400">{runActionError}</p>
         )}
       </div>
 

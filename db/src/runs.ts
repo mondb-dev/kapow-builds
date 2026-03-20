@@ -3,6 +3,7 @@ import type { RunStatus as PrismaRunStatus, LogLevel as PrismaLogLevel } from '@
 
 export type RunStatus = 'pending' | 'planning' | 'building' | 'qa' | 'gate' | 'done' | 'failed';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+const SYSTEM_PROJECT_ID = 'kapow-system';
 
 const STATUS_TO_PRISMA: Record<RunStatus, PrismaRunStatus> = {
   pending: 'PENDING', planning: 'PLANNING', building: 'BUILDING',
@@ -25,11 +26,47 @@ export interface RunRecord {
 
 // ── Runs ─────────────────────────────────────────────────────────────
 
+async function getSystemProjectId(): Promise<string> {
+  const project = await prisma.project.upsert({
+    where: { id: SYSTEM_PROJECT_ID },
+    update: {},
+    create: {
+      id: SYSTEM_PROJECT_ID,
+      name: 'Kapow System',
+      description: 'Internal project used for unscoped pipeline runs.',
+    },
+  });
+
+  return project.id;
+}
+
 export async function createRun(projectId: string, plan: string): Promise<RunRecord> {
   const row = await prisma.run.create({
     data: { projectId, plan },
   });
   return { ...row, status: 'pending' };
+}
+
+export async function ensureRun(
+  id: string,
+  plan: string,
+  projectId?: string,
+): Promise<RunRecord> {
+  const resolvedProjectId = projectId ?? await getSystemProjectId();
+  const row = await prisma.run.upsert({
+    where: { id },
+    update: {
+      plan,
+      projectId: resolvedProjectId,
+    },
+    create: {
+      id,
+      plan,
+      projectId: resolvedProjectId,
+    },
+  });
+
+  return row as unknown as RunRecord;
 }
 
 export async function updateRunStatus(id: string, status: RunStatus, result?: unknown): Promise<void> {

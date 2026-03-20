@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { cardAccessWhere } from '@/lib/authz';
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
 
   const [cards, total] = await Promise.all([
     db.card.findMany({
+      where: cardAccessWhere(session.user.id),
       include: {
         assignee: { select: { id: true, name: true, image: true } },
         creator: { select: { id: true, name: true, image: true } },
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
       skip,
       take: limit,
     }),
-    db.card.count(),
+    db.card.count({ where: cardAccessWhere(session.user.id) }),
   ]);
 
   return NextResponse.json({ cards, total, page, limit });

@@ -57,6 +57,21 @@ Task IDs must be globally unique (e.g. phase_1_task_1, phase_2_task_3).
 Phase dependencies reference other phase IDs. Task dependencies reference task IDs within the same phase.
 Do not include markdown, code fences, or any text outside the JSON object.`;
 
+function normalizePlannerJson(rawText: string): string {
+  const withoutFences = rawText.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+  const firstBrace = withoutFences.indexOf('{');
+  const lastBrace = withoutFences.lastIndexOf('}');
+  const isolatedJson =
+    firstBrace >= 0 && lastBrace > firstBrace
+      ? withoutFences.slice(firstBrace, lastBrace + 1)
+      : withoutFences;
+
+  return isolatedJson
+    .replace(/^(\s*)([A-Za-z_][A-Za-z0-9_]*)":/gm, '$1"$2":')
+    .replace(/^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/gm, '$1"$2":')
+    .replace(/,\s*([}\]])/g, '$1');
+}
+
 export async function createProjectPlan(
   runId: string,
   brief: string,
@@ -102,10 +117,15 @@ export async function createProjectPlan(
   };
 
   try {
-    const raw = content.text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(content.text);
   } catch (err) {
-    throw new Error(`Planner returned invalid JSON: ${err}\n\nRaw response:\n${content.text}`);
+    const repaired = normalizePlannerJson(content.text);
+
+    try {
+      parsed = JSON.parse(repaired);
+    } catch (repairErr) {
+      throw new Error(`Planner returned invalid JSON: ${repairErr}\n\nRaw response:\n${content.text}`);
+    }
   }
 
   if (!Array.isArray(parsed.phases) || parsed.phases.length === 0) {

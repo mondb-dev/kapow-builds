@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { isInternalRequestAuthorized } from 'kapow-shared';
 import {
   getRecentAlerts, getRecentAudit, acknowledgeAlert,
   analyzePipelineEvent, getAlertStats,
@@ -11,6 +12,21 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 const PORT = parseInt(process.env.PORT ?? '3007', 10);
+const HOST = process.env.HOST ?? '127.0.0.1';
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path === '/health') {
+    next();
+    return;
+  }
+
+  if (isInternalRequestAuthorized(req.headers)) {
+    next();
+    return;
+  }
+
+  res.status(401).json({ error: 'Internal authorization required' });
+});
 
 // ── Health ───────────────────────────────────────────────────────────
 
@@ -134,6 +150,6 @@ if (process.env.BUS_URL) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`kapow-security listening on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`kapow-security listening on ${HOST}:${PORT}`);
 });

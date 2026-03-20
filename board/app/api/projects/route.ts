@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { projectAccessWhere } from '@/lib/authz';
 
 export async function GET() {
   const session = await auth();
@@ -9,6 +10,7 @@ export async function GET() {
   }
 
   const projects = await db.project.findMany({
+    where: projectAccessWhere(session.user.id),
     orderBy: { updatedAt: 'desc' },
     include: {
       _count: { select: { cards: true, runs: true } },

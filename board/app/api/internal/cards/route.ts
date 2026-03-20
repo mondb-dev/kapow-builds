@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-
-/**
- * Internal API — no auth required (service-to-service from kapow-actions).
- * Protected by network isolation (only accessible within Docker network or localhost).
- */
+import { requireInternalApiKey } from '@/lib/internal';
 
 export async function POST(req: NextRequest) {
+  const unauthorized = requireInternalApiKey(req);
+  if (unauthorized) return unauthorized;
+
   const body = await req.json();
   const { title, description, status, runId, phaseId, taskId } = body as {
     title?: string;
@@ -44,6 +43,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const unauthorized = requireInternalApiKey(req);
+  if (unauthorized) return unauthorized;
+
   const { searchParams } = new URL(req.url);
   const runId = searchParams.get('runId');
 

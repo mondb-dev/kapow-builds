@@ -187,6 +187,8 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kapow
 
 # GitHub OAuth (for board login)
 AUTH_SECRET=generate-a-random-string
+INTERNAL_API_KEY=generate-a-second-random-string
+COMMS_WEBHOOK_SECRET=optional-separate-webhook-secret
 AUTH_GITHUB_ID=your-github-oauth-app-id
 AUTH_GITHUB_SECRET=your-github-oauth-app-secret
 
@@ -287,7 +289,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-This starts all 9 services + PostgreSQL + Caddy (HTTPS reverse proxy). Set `KAPOW_DOMAIN` in `.env` to your domain.
+This starts all 9 services + PostgreSQL + Caddy (HTTPS reverse proxy), and runs a one-shot DB init job (`prisma db push` + seed) before the DB-backed services start. Set `KAPOW_DOMAIN` in `.env` to your domain.
 
 ### PM2 (bare metal)
 
@@ -303,7 +305,7 @@ pm2 start ecosystem.config.cjs
 ### Slack Bot Setup
 
 1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps)
-2. Enable **Socket Mode** (for development) or configure an **Event Subscriptions URL** (`https://your-domain/api/comms/slack/events`)
+2. Enable **Socket Mode** (for development) or configure your inbound webhook URL as `https://your-domain/api/comms/webhook`
 3. Add bot scopes: `app_mentions:read`, `chat:write`, `users:read`, `commands`
 4. Subscribe to events: `app_mention`, `message.channels`, `message.groups`
 5. Optionally add slash command: `/kapow`

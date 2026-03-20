@@ -1,12 +1,21 @@
 import { GoogleGenerativeAI, SchemaType, type Content, type Part, type FunctionDeclaration, type Tool } from '@google/generative-ai';
 import type { AIProvider, AIMessage, AIToolDef, AIResponse, AIContentBlock } from './types.js';
 
+function getScopedKey(name: string): string | undefined {
+  const serviceName = process.env.SERVICE_NAME?.trim().toUpperCase().replace(/-/g, '_');
+  if (!serviceName) return undefined;
+  return process.env[`${serviceName}_${name}`];
+}
+
 export class GeminiProvider implements AIProvider {
   readonly name = 'gemini';
   private client: GoogleGenerativeAI;
 
   constructor(apiKey?: string) {
-    const key = apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+    const key = apiKey
+      ?? getScopedKey('GEMINI_API_KEY')
+      ?? process.env.GEMINI_API_KEY
+      ?? process.env.GOOGLE_API_KEY;
     if (!key) throw new Error('GEMINI_API_KEY or GOOGLE_API_KEY is required');
     this.client = new GoogleGenerativeAI(key);
   }

@@ -1,0 +1,28 @@
+{
+  "name": "kapow-pipeline",
+  "version": "1.0.0",
+  "description": "Consolidated pipeline: planner, builder, QA, gate as direct function calls in one process",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.1",
+    "axios": "^1.7.9",
+    "express": "^4.21.2",
+    "kapow-db": "file:../db",
+    "kapow-shared": "file:../shared",
+    "puppeteer-core": "^23.10.4",
+    "simple-git": "^3.27.0",
+    "@octokit/rest": "^21.0.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

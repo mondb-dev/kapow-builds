@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { userCanAccessCard } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,10 +17,8 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   const { cardId } = await params;
 
-  // Verify card exists
-  const card = await db.card.findUnique({ where: { id: cardId } });
-  if (!card) {
-    return new Response('Card not found', { status: 404 });
+  if (!(await userCanAccessCard(session.user.id, cardId)) && !session.user.isAdmin) {
+    return new Response('Forbidden', { status: 403 });
   }
 
   let lastSeenId: string | null = null;

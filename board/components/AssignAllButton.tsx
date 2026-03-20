@@ -13,7 +13,7 @@ export function AssignAllButton({ projectId, count }: Props) {
   const router = useRouter();
 
   const handleAssignAll = async () => {
-    if (!confirm(`Assign all ${count} unassigned cards to Kapow?`)) return;
+    if (!confirm(`Start work on ${count} planned cards? Kapow will follow the planner's sequence.`)) return;
 
     setAssigning(true);
     try {
@@ -23,12 +23,12 @@ export function AssignAllButton({ projectId, count }: Props) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? 'Failed to assign');
+        alert(data.error ?? 'Failed to start work');
         return;
       }
 
       const data = await res.json();
-      alert(`Kapow is on it. ${data.assigned} cards assigned.`);
+      alert(`Kapow started work on ${data.started} cards in planner order.`);
       router.refresh();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed');
@@ -46,7 +46,7 @@ export function AssignAllButton({ projectId, count }: Props) {
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
-      {assigning ? 'Assigning...' : `Assign All to Kapow (${count})`}
+      {assigning ? 'Starting...' : `Start Work (${count})`}
     </button>
   );
 }

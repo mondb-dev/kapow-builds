@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect, notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { CardDetail } from '@/components/CardDetail';
+import { userCanAccessCard } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,10 @@ export default async function CardPage({ params }: Props) {
   }
 
   const { cardId } = await params;
+
+  if (!(await userCanAccessCard(session.user.id, cardId)) && !session.user.isAdmin) {
+    notFound();
+  }
 
   const card = await db.card.findUnique({
     where: { id: cardId },

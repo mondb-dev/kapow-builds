@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import Link from 'next/link';
+import { projectAccessWhere } from '@/lib/authz';
 
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,7 @@ export default async function ProjectsPage() {
   if (!session?.user) redirect('/login');
 
   const projects = await db.project.findMany({
+    where: projectAccessWhere(session.user.id),
     orderBy: { updatedAt: 'desc' },
     include: {
       _count: { select: { cards: true, runs: true } },

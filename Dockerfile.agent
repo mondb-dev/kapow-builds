@@ -61,12 +61,11 @@ COPY --from=builder /build/db/prisma db/prisma
 
 COPY --from=builder /build/tool-client/dist tool-client/dist
 COPY --from=builder /build/tool-client/package.json tool-client/
+COPY --from=builder /build/tool-client/node_modules tool-client/node_modules
 
 COPY --from=builder /build/${SERVICE}/dist ${SERVICE}/dist
 COPY --from=builder /build/${SERVICE}/package.json ${SERVICE}/
-
-# Production install for the service only (no devDeps)
-RUN cd ${SERVICE} && npm ci --omit=dev 2>/dev/null || true
+COPY --from=builder /build/${SERVICE}/node_modules ${SERVICE}/node_modules
 
 WORKDIR /app/${SERVICE}
 

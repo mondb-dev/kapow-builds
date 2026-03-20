@@ -1,3 +1,5 @@
+import { getInternalAuthHeaders } from './internal';
+
 const KAPOW_URL = process.env.KAPOW_ACTIONS_URL ?? 'http://localhost:3000';
 
 export interface PipelineStatus {
@@ -5,11 +7,14 @@ export interface PipelineStatus {
   messages: string[];
 }
 
-export async function triggerPipeline(runId: string, plan: string): Promise<void> {
+export async function triggerPipeline(runId: string, plan: string, projectId?: string): Promise<void> {
   const res = await fetch(`${KAPOW_URL}/pipeline`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runId, plan }),
+    headers: {
+      'Content-Type': 'application/json',
+      ...getInternalAuthHeaders(),
+    },
+    body: JSON.stringify({ runId, plan, projectId }),
   });
 
   if (!res.ok) {
@@ -20,6 +25,7 @@ export async function triggerPipeline(runId: string, plan: string): Promise<void
 
 export async function getPipelineStatus(runId: string): Promise<PipelineStatus> {
   const res = await fetch(`${KAPOW_URL}/runs/${runId}/status`, {
+    headers: getInternalAuthHeaders(),
     next: { revalidate: 0 },
   });
 
@@ -28,4 +34,20 @@ export async function getPipelineStatus(runId: string): Promise<PipelineStatus> 
   }
 
   return res.json() as Promise<PipelineStatus>;
+}
+
+export async function stopPipeline(runId: string, reason = 'Stopped by user.'): Promise<void> {
+  const res = await fetch(`${KAPOW_URL}/runs/${runId}/stop`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getInternalAuthHeaders(),
+    },
+    body: JSON.stringify({ reason }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => 'unknown error');
+    throw new Error(`kapow-actions /runs/${runId}/stop returned ${res.status}: ${text}`);
+  }
 }

@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { Board } from '@/components/Board';
 import { AssignAllButton } from '@/components/AssignAllButton';
 import Link from 'next/link';
+import { userCanAccessProject } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,10 @@ export default async function ProjectKanbanPage({ params }: Params) {
   if (!session?.user) redirect('/login');
 
   const { projectId } = await params;
+
+  if (!(await userCanAccessProject(session.user.id, projectId)) && !session.user.isAdmin) {
+    notFound();
+  }
 
   const project = await db.project.findUnique({
     where: { id: projectId },

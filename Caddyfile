@@ -18,6 +18,9 @@
 	handle /api/cards/* {
 		reverse_proxy board:3005
 	}
+	handle /api/internal/* {
+		respond "Forbidden" 403
+	}
 	handle /api/projects/* {
 		reverse_proxy board:3005
 	}

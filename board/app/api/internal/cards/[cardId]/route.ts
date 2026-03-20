@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-
-/**
- * Internal API — update card status (service-to-service).
- */
+import { requireInternalApiKey } from '@/lib/internal';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ cardId: string }> }
 ) {
+  const unauthorized = requireInternalApiKey(req);
+  if (unauthorized) return unauthorized;
+
   const { cardId } = await params;
   const body = await req.json();
   const { status } = body as { status?: string };

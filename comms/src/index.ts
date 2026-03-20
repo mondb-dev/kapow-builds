@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { timingSafeEqual } from 'crypto';
 import { handleMessage, type ReplyFn, type Platform } from './handler.js';
 import {
   SlackAdapter, WebhookAdapter,
@@ -9,6 +10,18 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 
 const PORT = parseInt(process.env.PORT ?? '3008', 10);
+const HOST = process.env.HOST ?? '127.0.0.1';
+
+function isWebhookAuthorized(req: Request): boolean {
+  const expected = process.env.COMMS_WEBHOOK_SECRET ?? process.env.INTERNAL_API_KEY ?? process.env.AUTH_SECRET ?? '';
+  if (!expected) return false;
+
+  const provided = req.header('x-kapow-webhook-secret') ?? '';
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+
+  return expectedBuf.length === providedBuf.length && timingSafeEqual(expectedBuf, providedBuf);
+}
 
 // ── Channel adapter registry ─────────────────────────────────────────
 
@@ -50,6 +63,11 @@ app.get('/health', (_req: Request, res: Response) => {
 webhookAdapter.onMessage(createMessageHandler('plain'));
 
 app.post('/webhook', async (req: Request, res: Response) => {
+  if (!isWebhookAuthorized(req)) {
+    res.status(401).json({ error: 'Webhook authorization required' });
+    return;
+  }
+
   const { channelId, threadId, userId, userName, text, platform } = req.body as {
     channelId?: string; threadId?: string; userId?: string;
     userName?: string; text?: string; platform?: Platform;
@@ -75,8 +93,8 @@ app.post('/webhook', async (req: Request, res: Response) => {
 
 async function main() {
   // Start Express for health + webhooks
-  app.listen(PORT, () => {
-    console.log(`[comms] HTTP server on port ${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`[comms] HTTP server on ${HOST}:${PORT}`);
   });
 
   await webhookAdapter.start();

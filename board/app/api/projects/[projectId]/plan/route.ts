@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { getInternalAuthHeaders } from '@/lib/internal';
+import { userCanAccessProject } from '@/lib/authz';
 
 const PLANNER_URL = process.env.PLANNER_URL ?? process.env.KAPOW_PLANNER_URL ?? 'http://localhost:3001';
 
@@ -18,6 +20,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   const body = await req.json();
   const { brief } = body as { brief: string; attachments?: unknown[] };
 
+  if (!(await userCanAccessProject(session.user.id, projectId)) && !session.user.isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   if (!brief?.trim()) {
     return NextResponse.json({ error: 'Brief is required' }, { status: 400 });
   }
@@ -31,7 +37,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Call the planner service
     const planRes = await fetch(`${PLANNER_URL}/plan`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getInternalAuthHeaders(),
+      },
       body: JSON.stringify({
         runId: `plan-${projectId}`,
         plan: brief,

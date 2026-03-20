@@ -1,7 +1,9 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
 import { runPipeline } from './orchestrator.js';
-import { addRunLog, getRunLogs } from 'kapow-db/runs';
+import { addRunLog, ensureRun, getRunLogs } from 'kapow-db/runs';
+import { INTERNAL_AUTH_HEADER, isInternalRequestAuthorized } from 'kapow-shared';
+import { finishRun, startRun, stopRun } from './run-control.js';
 
 export interface RunEntry {
   status: 'running' | 'done' | 'failed';
@@ -73,6 +75,15 @@ function sendJson(res: ServerResponse, status: number, data: unknown, req?: Inco
   res.end(body);
 }
 
+function requireInternalAuth(req: IncomingMessage, res: ServerResponse): boolean {
+  if (isInternalRequestAuthorized(req.headers)) {
+    return true;
+  }
+
+  sendJson(res, 401, { error: 'Internal authorization required' }, req);
+  return false;
+}
+
 function broadcastToRun(runId: string, event: unknown) {
   const entry = runLog.get(runId);
   if (!entry) return;
@@ -92,7 +103,11 @@ async function handlePipeline(req: IncomingMessage, res: ServerResponse) {
   try { body = await parseBody(req); }
   catch { sendJson(res, 400, { error: 'Invalid JSON' }, req); return; }
 
-  const { plan, runId: requestedRunId } = body as { plan?: string; runId?: string };
+  const {
+    plan,
+    runId: requestedRunId,
+    projectId,
+  } = body as { plan?: string; runId?: string; projectId?: string };
 
   if (!plan || typeof plan !== 'string') {
     sendJson(res, 400, { error: 'plan is required' }, req);
@@ -114,6 +129,16 @@ async function handlePipeline(req: IncomingMessage, res: ServerResponse) {
   const runId = requestedRunId && typeof requestedRunId === 'string' ? requestedRunId : randomUUID();
   const messages: string[] = [];
   const entry: RunEntry = { status: 'running', messages, createdAt: Date.now(), subscribers: new Set() };
+  const runSignal = startRun(runId);
+
+  try {
+    await ensureRun(runId, plan, typeof projectId === 'string' ? projectId : undefined);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    sendJson(res, 500, { error: `Failed to initialize run: ${msg}` }, req);
+    return;
+  }
+
   runLog.set(runId, entry);
 
   // Respond immediately with runId
@@ -130,12 +155,13 @@ async function handlePipeline(req: IncomingMessage, res: ServerResponse) {
 
   onProgress(`[${runId}] Pipeline started.`);
 
-  runPipeline(runId, plan, onProgress)
+  runPipeline(runId, plan, onProgress, typeof projectId === 'string' ? projectId : undefined, runSignal)
     .then((result) => {
       const status = result.success ? 'done' : 'failed';
       entry.status = status;
       entry.result = result;
       broadcastToRun(runId, { type: status, runId });
+      finishRun(runId);
 
       // Close SSE connections
       for (const sub of entry.subscribers) {
@@ -147,13 +173,51 @@ async function handlePipeline(req: IncomingMessage, res: ServerResponse) {
       const msg = err instanceof Error ? err.message : String(err);
       messages.push(`[${runId}] Unexpected error: ${msg}`);
       entry.status = 'failed';
+      addRunLog(runId, 'actions', `[${runId}] Unexpected error: ${msg}`, 'error').catch(() => {});
       broadcastToRun(runId, { type: 'failed', message: msg, runId });
+      finishRun(runId);
 
       for (const sub of entry.subscribers) {
         try { sub.end(); } catch { /* ignore */ }
       }
       entry.subscribers.clear();
     });
+}
+
+async function handleRunStop(req: IncomingMessage, res: ServerResponse, runId: string) {
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Method not allowed' }, req);
+    return;
+  }
+
+  if (!isValidRunId(runId)) {
+    sendJson(res, 400, { error: 'Invalid runId' }, req);
+    return;
+  }
+
+  let body: unknown = {};
+  try {
+    body = await parseBody(req);
+  } catch {
+    sendJson(res, 400, { error: 'Invalid JSON' }, req);
+    return;
+  }
+
+  const reason = typeof (body as { reason?: string }).reason === 'string'
+    ? (body as { reason?: string }).reason
+    : 'Stopped by user.';
+
+  const entry = runLog.get(runId);
+  const stopped = stopRun(runId, reason);
+
+  if (entry && stopped) {
+    entry.status = 'failed';
+    entry.messages.push(`[${runId}] ${reason}`);
+    broadcastToRun(runId, { type: 'failed', message: reason, runId });
+    addRunLog(runId, 'actions', `[${runId}] ${reason}`, 'warn').catch(() => {});
+  }
+
+  sendJson(res, 200, { ok: true, stopped }, req);
 }
 
 async function handleRunStatus(req: IncomingMessage, res: ServerResponse, runId: string) {
@@ -227,6 +291,7 @@ function handleRunStream(req: IncomingMessage, res: ServerResponse, runId: strin
 }
 
 export function createHttpServer(port = 3000) {
+  const host = process.env.HOST ?? '127.0.0.1';
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = req.url ?? '/';
@@ -237,7 +302,7 @@ export function createHttpServer(port = 3000) {
         const origin = getCorsOrigin(req);
         const headers: Record<string, string> = {
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Headers': `Content-Type, ${INTERNAL_AUTH_HEADER}`,
         };
         if (origin) headers['Access-Control-Allow-Origin'] = origin;
         res.writeHead(204, headers);
@@ -247,6 +312,7 @@ export function createHttpServer(port = 3000) {
 
       // POST /pipeline
       if (url === '/pipeline') {
+        if (!requireInternalAuth(req, res)) return;
         await handlePipeline(req, res);
         return;
       }
@@ -254,6 +320,7 @@ export function createHttpServer(port = 3000) {
       // GET /runs/:runId/status
       const statusMatch = url.match(/^\/runs\/([^/]+)\/status$/);
       if (statusMatch && method === 'GET') {
+        if (!requireInternalAuth(req, res)) return;
         handleRunStatus(req, res, statusMatch[1]);
         return;
       }
@@ -261,7 +328,15 @@ export function createHttpServer(port = 3000) {
       // GET /runs/:runId/stream
       const streamMatch = url.match(/^\/runs\/([^/]+)\/stream$/);
       if (streamMatch && method === 'GET') {
+        if (!requireInternalAuth(req, res)) return;
         handleRunStream(req, res, streamMatch[1]);
+        return;
+      }
+
+      const stopMatch = url.match(/^\/runs\/([^/]+)\/stop$/);
+      if (stopMatch && method === 'POST') {
+        if (!requireInternalAuth(req, res)) return;
+        await handleRunStop(req, res, stopMatch[1]);
         return;
       }
 
@@ -282,8 +357,8 @@ export function createHttpServer(port = 3000) {
     }
   });
 
-  server.listen(port, () => {
-    process.stderr.write(`kapow-actions HTTP server listening on port ${port}\n`);
+  server.listen(port, host, () => {
+    process.stderr.write(`kapow-actions HTTP server listening on ${host}:${port}\n`);
   });
 
   return server;

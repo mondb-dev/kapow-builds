@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { createProject } from 'kapow-db/projects';
-import { KAPOW_LINES } from 'kapow-shared';
+import { KAPOW_LINES, getInternalAuthHeaders } from 'kapow-shared';
 import { detectIntent } from './intent.js';
 import {
   getConversation, createConversation, updateConversation, addMessage,
@@ -37,9 +37,10 @@ export async function handleMessage(
   }
 
   addMessage(convo, 'user', text);
-  const intent = await detectIntent(text, convo.phase);
 
   try {
+    const intent = await detectIntent(text, convo.phase);
+
     switch (convo.phase) {
       case 'idle':
         await handleIdle(convo, intent, reply, platform);
@@ -167,7 +168,10 @@ async function handleBuilding(
     }
 
     try {
-      const res = await axios.get(`${ACTIONS_URL}/runs/${convo.runId}/status`, { timeout: 5000 });
+      const res = await axios.get(`${ACTIONS_URL}/runs/${convo.runId}/status`, {
+        timeout: 5000,
+        headers: getInternalAuthHeaders(),
+      });
       const { status, messages } = res.data as { status: string; messages: string[] };
       const lastMessages = messages.slice(-5).map((m: string) => `> ${m}`).join('\n');
       await say(convo, reply, `Status: *${status}*. ${K.statusRunning}\n\n${lastMessages}`);
@@ -252,8 +256,11 @@ async function startPipeline(convo: ConversationState, reply: ReplyFn): Promise<
 
     const res = await axios.post(
       `${ACTIONS_URL}/pipeline`,
-      { plan: convo.scope, runId: `slack-${convo.id}` },
-      { timeout: 10_000 },
+      { plan: convo.scope, runId: `slack-${convo.id}`, projectId: project.id },
+      {
+        timeout: 10_000,
+        headers: getInternalAuthHeaders(),
+      },
     );
 
     convo.runId = (res.data as { runId: string }).runId;
@@ -280,7 +287,10 @@ async function pollPipelineProgress(convo: ConversationState, reply: ReplyFn): P
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
 
     try {
-      const res = await axios.get(`${ACTIONS_URL}/runs/${convo.runId}/status`, { timeout: 5000 });
+      const res = await axios.get(`${ACTIONS_URL}/runs/${convo.runId}/status`, {
+        timeout: 5000,
+        headers: getInternalAuthHeaders(),
+      });
       const { status, messages } = res.data as { status: string; messages: string[] };
 
       const newMessages = messages.slice(lastMessageCount);

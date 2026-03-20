@@ -11,7 +11,7 @@
  *   GET  /bus/status      — bus stats
  */
 import express, { Request, Response } from 'express';
-import { getBus } from 'kapow-shared';
+import { getBus, isInternalRequestAuthorized } from 'kapow-shared';
 import type { BusMessage } from 'kapow-shared';
 
 const bus = getBus();
@@ -47,6 +47,15 @@ function ensureAgent(agent: string): void {
 }
 
 export function mountBusAPI(app: express.Express): void {
+  app.use('/bus', (req: Request, res: Response, next) => {
+    if (isInternalRequestAuthorized(req.headers)) {
+      next();
+      return;
+    }
+
+    res.status(401).json({ error: 'Internal authorization required' });
+  });
+
   // ── Publish ────────────────────────────────────────────────────
 
   app.post('/bus/publish', async (req: Request, res: Response) => {
@@ -118,14 +127,7 @@ export function mountBusAPI(app: express.Express): void {
       startIdx = 0;
     }
 
-    const messages = inbox.slice(startIdx);
-
-    // Remove only delivered messages, keep undelivered ones
-    if (messages.length > 0) {
-      agentInboxes.set(agent, inbox.slice(startIdx + messages.length));
-    }
-
-    res.json(messages);
+    res.json(inbox.slice(startIdx));
   });
 
   // ── Status ─────────────────────────────────────────────────────

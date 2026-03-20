@@ -8,6 +8,7 @@
 import axios from 'axios';
 import { randomUUID } from 'crypto';
 import type { BusMessage, FileAttachment, MessageHandler } from './types.js';
+import { getInternalAuthHeaders } from '../internal-auth.js';
 
 export class BusClient {
   private busUrl: string;
@@ -40,7 +41,10 @@ export class BusClient {
       payload,
       runId: options?.runId,
       attachments: options?.attachments,
-    }, { timeout: 5_000 }).catch(() => {
+    }, {
+      timeout: 5_000,
+      headers: getInternalAuthHeaders(),
+    }).catch(() => {
       // Non-blocking — bus might not be available
     });
   }
@@ -60,7 +64,10 @@ export class BusClient {
       to,
       payload,
       runId,
-    }, { timeout: timeoutMs + 5_000 }); // HTTP timeout slightly longer than bus timeout
+    }, {
+      timeout: timeoutMs + 5_000,
+      headers: getInternalAuthHeaders(),
+    }); // HTTP timeout slightly longer than bus timeout
 
     return res.data;
   }
@@ -81,6 +88,7 @@ export class BusClient {
         const res = await axios.get<BusMessage[]>(`${this.busUrl}/messages`, {
           params: { agent: this.agentName, after: this.lastSeenId },
           timeout: 3_000,
+          headers: getInternalAuthHeaders(),
         });
 
         for (const msg of res.data) {

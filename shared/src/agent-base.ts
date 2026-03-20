@@ -46,6 +46,7 @@ export function createAgent(name: string, config: AgentConfig = {}): Agent {
   app.use(express.json({ limit: config.bodyLimit ?? '10mb' }));
 
   const PORT = parseInt(process.env.PORT ?? '3000', 10);
+  const HOST = process.env.HOST ?? '127.0.0.1';
 
   // ── Structured logging ─────────────────────────────────────────
 
@@ -59,13 +60,32 @@ export function createAgent(name: string, config: AgentConfig = {}): Agent {
     }
   }
 
+  function getScopedKey(key: string): string | undefined {
+    const serviceName = process.env.SERVICE_NAME?.trim().toUpperCase().replace(/-/g, '_');
+    if (!serviceName) return undefined;
+    return process.env[`${serviceName}_${key}`];
+  }
+
   // ── Startup validation ─────────────────────────────────────────
+
+  function hasConfiguredAIKey(): boolean {
+    const provider = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase();
+    if (provider === 'gemini' || provider === 'google') {
+      return Boolean(getScopedKey('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+    }
+    return Boolean(getScopedKey('ANTHROPIC_API_KEY') || process.env.ANTHROPIC_API_KEY);
+  }
 
   function validateEnv(): void {
     const missing: string[] = [];
 
-    if (config.requiresAI && !process.env.ANTHROPIC_API_KEY) {
-      missing.push('ANTHROPIC_API_KEY');
+    if (config.requiresAI && !hasConfiguredAIKey()) {
+      const provider = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase();
+      if (provider === 'gemini' || provider === 'google') {
+        missing.push('GEMINI_API_KEY or GOOGLE_API_KEY');
+      } else {
+        missing.push('ANTHROPIC_API_KEY');
+      }
     }
     if (config.requiresDB && !process.env.DATABASE_URL) {
       missing.push('DATABASE_URL');
@@ -124,8 +144,8 @@ export function createAgent(name: string, config: AgentConfig = {}): Agent {
 
     const boot = async () => {
       if (config.onBoot) await config.onBoot();
-      app.listen(PORT, () => {
-        log(`listening on port ${PORT}`);
+      app.listen(PORT, HOST, () => {
+        log(`listening on ${HOST}:${PORT}`);
       });
     };
 

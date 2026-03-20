@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-
-/**
- * Internal API — add events to a card (service-to-service).
- */
+import { requireInternalApiKey } from '@/lib/internal';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ cardId: string }> }
 ) {
+  const unauthorized = requireInternalApiKey(req);
+  if (unauthorized) return unauthorized;
+
   const { cardId } = await params;
   const body = await req.json();
   const { message, type } = body as { message?: string; type?: string };

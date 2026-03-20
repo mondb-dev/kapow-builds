@@ -12,6 +12,12 @@ app.use(express.json({ limit: '10mb' }));
 
 const PORT = parseInt(process.env.PORT ?? '3006', 10);
 
+function getScopedKey(key: string): string | undefined {
+  const serviceName = process.env.SERVICE_NAME?.trim().toUpperCase().replace(/-/g, '_');
+  if (!serviceName) return undefined;
+  return process.env[`${serviceName}_${key}`];
+}
+
 // ── Health ───────────────────────────────────────────────────────────
 
 app.get('/health', async (_req: Request, res: Response) => {
@@ -172,8 +178,17 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: err.message });
 });
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('FATAL: ANTHROPIC_API_KEY is required');
+const aiProvider = (process.env.AI_PROVIDER ?? 'anthropic').toLowerCase();
+const hasAIKey = aiProvider === 'gemini' || aiProvider === 'google'
+  ? Boolean(getScopedKey('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)
+  : Boolean(getScopedKey('ANTHROPIC_API_KEY') || process.env.ANTHROPIC_API_KEY);
+
+if (!hasAIKey) {
+  console.error(
+    aiProvider === 'gemini' || aiProvider === 'google'
+      ? 'FATAL: GEMINI_API_KEY or GOOGLE_API_KEY is required'
+      : 'FATAL: ANTHROPIC_API_KEY is required'
+  );
   process.exit(1);
 }
 

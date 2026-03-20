@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { CardStatus } from '@prisma/client';
+import { userCanAccessCard } from '@/lib/authz';
 
 interface Params {
   params: Promise<{ cardId: string }>;
@@ -28,6 +29,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Card not found' }, { status: 404 });
   }
 
+  if (!(await userCanAccessCard(session.user.id, cardId)) && !session.user.isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   return NextResponse.json(card);
 }
 
@@ -44,7 +49,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Card not found' }, { status: 404 });
   }
 
-  if (card.creatorId !== session.user.id && card.assigneeId !== session.user.id) {
+  if (!(await userCanAccessCard(session.user.id, cardId)) && !session.user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -102,7 +107,12 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Card not found' }, { status: 404 });
   }
 
-  if (card.creatorId !== session.user.id) {
+  const canDelete =
+    card.creatorId === session.user.id ||
+    (card.projectId !== null && await userCanAccessCard(session.user.id, cardId)) ||
+    session.user.isAdmin;
+
+  if (!canDelete) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

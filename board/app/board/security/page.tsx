@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { getInternalAuthHeaders } from '@/lib/internal';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,7 @@ interface Dashboard {
 async function fetchDashboard(): Promise<Dashboard | null> {
   try {
     const res = await fetch(`${SECURITY_URL}/dashboard`, {
+      headers: getInternalAuthHeaders(),
       next: { revalidate: 10 },
     });
     return res.json();
@@ -62,6 +64,7 @@ const sevColors: Record<string, string> = {
 export default async function SecurityPage() {
   const session = await auth();
   if (!session?.user) redirect('/login');
+  if (!session.user.isAdmin) redirect('/board');
 
   const dashboard = await fetchDashboard();
 

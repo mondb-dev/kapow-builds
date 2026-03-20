@@ -1,13 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { AIProvider, AIMessage, AIToolDef, AIResponse, AIContentBlock } from './types.js';
 
+function getScopedKey(name: string): string | undefined {
+  const serviceName = process.env.SERVICE_NAME?.trim().toUpperCase().replace(/-/g, '_');
+  if (!serviceName) return undefined;
+  return process.env[`${serviceName}_${name}`];
+}
+
 export class AnthropicProvider implements AIProvider {
   readonly name = 'anthropic';
   private client: Anthropic;
 
   constructor(apiKey?: string) {
     this.client = new Anthropic({
-      apiKey: apiKey ?? process.env.ANTHROPIC_API_KEY,
+      apiKey: apiKey ?? getScopedKey('ANTHROPIC_API_KEY') ?? process.env.ANTHROPIC_API_KEY,
     });
   }
 

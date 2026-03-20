@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { triggerPipeline } from '@/lib/kapow';
-import { randomUUID } from 'crypto';
+import { userCanAccessCard } from '@/lib/authz';
 
 interface Params {
   params: Promise<{ cardId: string }>;
 }
 
 // Background fire-and-forget: runs pipeline, writes progress events to DB
-async function runPipelineBackground(cardId: string, runId: string, plan: string) {
+async function runPipelineBackground(cardId: string, runId: string, plan: string, projectId?: string) {
   try {
-    await triggerPipeline(runId, plan);
+    await triggerPipeline(runId, plan, projectId);
     // kapow-actions is async — progress comes via SSE /runs/:runId/stream
     // which the progress route will relay and persist as CardEvents
   } catch (err) {
@@ -46,12 +46,19 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Card not found' }, { status: 404 });
   }
 
+  if (!(await userCanAccessCard(session.user.id, cardId)) && !session.user.isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   if (assigneeType === 'AGENT') {
     // Ensure card has a project (create default if needed)
     let projectId = card.projectId;
     if (!projectId) {
       const project = await db.project.create({
-        data: { name: card.title },
+        data: {
+          name: card.title,
+          members: { connect: { id: session.user.id } },
+        },
       });
       projectId = project.id;
       await db.card.update({ where: { id: cardId }, data: { projectId } });
@@ -94,7 +101,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     });
 
     // Fire and forget — do not block the response
-    void runPipelineBackground(cardId, runId, card.description);
+    void runPipelineBackground(cardId, runId, card.description, projectId);
 
     return NextResponse.json(updated);
   }

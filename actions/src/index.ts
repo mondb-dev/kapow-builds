@@ -6,7 +6,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 import { runPipeline } from './orchestrator.js';
-import { createHttpServer } from './http.js';
+import { createHttpServer, runLog } from './http.js';
+import { addRunLog, ensureRun } from 'kapow-db/runs';
 
 const server = new Server(
   { name: 'kapow-actions', version: '1.0.0' },
@@ -50,18 +51,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// In-memory run log (process-lifetime only)
-const runLog = new Map<string, { status: string; messages: string[]; result?: unknown; createdAt: number }>();
-
-// Cleanup entries older than 1 hour every 5 minutes
-const RUN_TTL_MS = 60 * 60 * 1000;
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, entry] of runLog) {
-    if (now - entry.createdAt > RUN_TTL_MS) runLog.delete(id);
-  }
-}, 5 * 60 * 1000);
-
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
@@ -77,13 +66,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const runId = randomUUID();
     const messages: string[] = [];
 
-    runLog.set(runId, { status: 'running', messages, createdAt: Date.now() });
+    await ensureRun(runId, plan);
+    runLog.set(runId, { status: 'running', messages, createdAt: Date.now(), subscribers: new Set() });
 
     // Collect progress messages
     const onProgress = (msg: string) => {
       messages.push(msg);
       // Write to stderr so MCP host can surface them as notifications
       process.stderr.write(msg + '\n');
+      addRunLog(runId, 'actions', msg, 'info').catch(() => {});
     };
 
     onProgress(`[${runId}] Pipeline started.`);
@@ -91,7 +82,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Run pipeline (async, but we await here — MCP tools are synchronous responses)
     const result = await runPipeline(runId, plan, onProgress);
 
-    runLog.set(runId, { status: result.success ? 'done' : 'failed', messages, result, createdAt: Date.now() });
+    runLog.set(runId, {
+      status: result.success ? 'done' : 'failed',
+      messages,
+      result,
+      createdAt: Date.now(),
+      subscribers: new Set(),
+    });
 
     if (result.success) {
       const artifactSummary = (result.artifacts ?? [])
