@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { getInternalAuthHeaders } from '@/lib/internal';
 import { userCanAccessProject } from '@/lib/authz';
 
-const PLANNER_URL = process.env.PLANNER_URL ?? process.env.KAPOW_PLANNER_URL ?? 'http://localhost:3001';
+const PIPELINE_URL = process.env.KAPOW_ACTIONS_URL ?? process.env.PLANNER_URL ?? 'http://localhost:3000';
 
 interface Params {
   params: Promise<{ projectId: string }>;
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   try {
     // Call the planner service
-    const planRes = await fetch(`${PLANNER_URL}/plan`, {
+    const planRes = await fetch(`${PIPELINE_URL}/plan`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,83 +1,22 @@
-# Kapow Reverse Proxy
-# Only the board UI and comms webhook are public.
-# All internal agent APIs are blocked from external access.
+# Kapow Reverse Proxy — 3-service architecture
+# Only the board UI is public. Pipeline and technician are internal only.
 
 {$KAPOW_DOMAIN:kapow.example.com} {
 
-	# ── Public routes ─────────────────────────────────────────────
-
-	# Board UI (Next.js)
-	handle /board* {
+	# Board API routes (auth handled by NextAuth)
+	handle /api/* {
 		reverse_proxy board:3005
 	}
 
-	# Board API routes (auth is handled by NextAuth inside the board)
-	handle /api/auth/* {
-		reverse_proxy board:3005
-	}
-	handle /api/cards/* {
-		reverse_proxy board:3005
-	}
-	handle /api/internal/* {
-		respond "Forbidden" 403
-	}
-	handle /api/projects/* {
-		reverse_proxy board:3005
-	}
-	handle /api/uploads/* {
-		reverse_proxy board:3005
-	}
-	handle /api/runs/* {
-		reverse_proxy board:3005
-	}
-	handle /api/logs/* {
-		reverse_proxy board:3005
-	}
-
-	# Comms webhook (external platforms POST here)
-	handle /api/comms/webhook {
-		uri strip_prefix /api/comms
-		reverse_proxy comms:3008
-	}
-
-	# Comms health (for monitoring)
-	handle /api/comms/health {
-		uri strip_prefix /api/comms
-		reverse_proxy comms:3008
-	}
-
-	# ── Blocked routes ────────────────────────────────────────────
-	# Internal agent APIs are NOT exposed publicly.
-	# They communicate over the Docker network only.
-
-	handle /api/planner/* {
-		respond "Forbidden" 403
-	}
-	handle /api/builder/* {
-		respond "Forbidden" 403
-	}
-	handle /api/qa/* {
-		respond "Forbidden" 403
-	}
-	handle /api/gate/* {
-		respond "Forbidden" 403
-	}
-	handle /api/technician/* {
-		respond "Forbidden" 403
-	}
-	handle /api/security/* {
-		respond "Forbidden" 403
-	}
-
-	# Block direct access to actions pipeline trigger
+	# Block direct access to internal services
 	handle /pipeline {
 		respond "Forbidden" 403
 	}
-	handle /bus/* {
+	handle /plan {
 		respond "Forbidden" 403
 	}
 
-	# ── Default: board catch-all ──────────────────────────────────
+	# Default: board UI
 	handle /* {
 		reverse_proxy board:3005
 	}

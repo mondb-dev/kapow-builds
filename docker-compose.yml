@@ -14,7 +14,27 @@ services:
       - pgdata:/var/lib/postgresql/data
     expose:
       - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
+
+  # One-shot: push schema + seed on first boot
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args: { SERVICE: db }
+    environment:
+      <<: *db-env
+    command: sh -c "npx prisma db push --skip-generate && npx tsx src/seed.ts"
+    working_dir: /app/db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   pipeline:
     build:
@@ -26,12 +46,13 @@ services:
       <<: *db-env
       PORT: "3000"
       TECHNICIAN_URL: http://technician:3006
-      BOARD_URL: http://board:3005
     expose:
       - "3000"
     depends_on:
-      - postgres
-      - technician
+      db-init:
+        condition: service_completed_successfully
+      technician:
+        condition: service_started
     restart: unless-stopped
 
   technician:
@@ -46,7 +67,8 @@ services:
     expose:
       - "3006"
     depends_on:
-      - postgres
+      db-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   board:
@@ -58,12 +80,13 @@ services:
       <<: *db-env
       PORT: "3005"
       KAPOW_ACTIONS_URL: http://pipeline:3000
-      PLANNER_URL: http://pipeline:3000
     expose:
       - "3005"
     depends_on:
-      - postgres
-      - pipeline
+      db-init:
+        condition: service_completed_successfully
+      pipeline:
+        condition: service_started
     restart: unless-stopped
 
   caddy:
@@ -78,7 +101,6 @@ services:
     environment:
       - KAPOW_DOMAIN=${KAPOW_DOMAIN:-localhost}
     depends_on:
-      - pipeline
       - board
     restart: unless-stopped
 

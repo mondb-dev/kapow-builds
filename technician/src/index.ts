@@ -194,8 +194,9 @@ if (!hasAIKey) {
 
 // Seed core tools on first boot, then start server
 seedCoreTools().then(async () => {
-  app.listen(PORT, async () => {
+  const HOST = process.env.HOST ?? '127.0.0.1';
+  app.listen(PORT, HOST, async () => {
     const tools = await loadTools();
-    console.log(`kapow-technician listening on port ${PORT} (${tools.filter((t) => t.status === 'ready').length} tools ready)`);
+    console.log(`kapow-technician listening on ${HOST}:${PORT} (${tools.filter((t) => t.status === 'ready').length} tools ready)`);
   });
 });

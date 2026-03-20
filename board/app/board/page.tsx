@@ -42,12 +42,7 @@ export default async function BoardPage() {
             <Link href="/board/projects" className="text-gray-400 hover:text-white transition-colors">Projects</Link>
             <Link href="/board/runs" className="text-gray-400 hover:text-white transition-colors">Runs</Link>
             <Link href="/board/knowledge" className="text-gray-400 hover:text-white transition-colors">Knowledge</Link>
-            {session.user.isAdmin && (
-              <>
-                <Link href="/board/logs" className="text-gray-400 hover:text-white transition-colors">Logs</Link>
-                <Link href="/board/security" className="text-gray-400 hover:text-white transition-colors">Security</Link>
-              </>
-            )}
+            <Link href="/board/logs" className="text-gray-400 hover:text-white transition-colors">Logs</Link>
           </nav>
 
           <div className="flex items-center gap-3">

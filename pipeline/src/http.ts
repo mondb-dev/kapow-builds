@@ -93,6 +93,35 @@ function broadcastToRun(runId: string, event: unknown) {
   }
 }
 
+async function handlePlan(req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Method not allowed' }, req);
+    return;
+  }
+
+  let body: unknown;
+  try { body = await parseBody(req); }
+  catch { sendJson(res, 400, { error: 'Invalid JSON' }, req); return; }
+
+  const { plan, runId: requestedRunId } = body as { plan?: string; runId?: string };
+
+  if (!plan || typeof plan !== 'string') {
+    sendJson(res, 400, { error: 'plan is required' }, req);
+    return;
+  }
+
+  // Import planner directly (same process)
+  const { createProjectPlan } = await import('./agents/planner.js');
+
+  try {
+    const projectPlan = await createProjectPlan(requestedRunId ?? 'plan-request', plan);
+    sendJson(res, 200, projectPlan, req);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    sendJson(res, 500, { error: `Planner failed: ${msg}` }, req);
+  }
+}
+
 async function handlePipeline(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST') {
     sendJson(res, 405, { error: 'Method not allowed' }, req);
@@ -307,6 +336,13 @@ export function createHttpServer(port = 3000) {
         if (origin) headers['Access-Control-Allow-Origin'] = origin;
         res.writeHead(204, headers);
         res.end();
+        return;
+      }
+
+      // POST /plan — planning only (no build)
+      if (url === '/plan' && method === 'POST') {
+        if (!requireInternalAuth(req, res)) return;
+        await handlePlan(req, res);
         return;
       }
 

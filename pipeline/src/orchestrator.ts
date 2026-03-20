@@ -229,7 +229,7 @@ export async function runPipeline(
 
       if (taskPassed) {
         completedTasks.push(task.id);
-        allArtifacts = buildResult.artifacts;
+        allArtifacts.push(...buildResult.artifacts);
         // Persist artifacts
         for (const artifact of buildResult.artifacts) {
           addRunArtifact(runId, task.id, artifact.path, artifact.type, sandboxPath ?? '', undefined).catch(() => {});
