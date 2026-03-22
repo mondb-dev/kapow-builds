@@ -10,7 +10,12 @@ export async function POST(
   if (unauthorized) return unauthorized;
 
   const { cardId } = await params;
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
+  }
   const { message, type } = body as { message?: string; type?: string };
 
   if (!message?.trim()) {

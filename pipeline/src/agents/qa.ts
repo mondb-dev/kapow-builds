@@ -16,9 +16,21 @@ function buildQAPrompt(architecture: ArchitectureDoc, availableTools: AvailableT
     return `- ${t.name}: ${doc?.summary ?? t.description}`;
   }).join('\n');
 
-  return `You are the QA — an automated tester with access to the Builder's sandbox. Your job is to PROVE whether a task's implementation works or does not work. You do not guess — you run the code, read the output, and report facts.
+  return `You are the QA — you verify whether the builder produced what was asked for. You check facts, not opinions.
 
-You have a reputation: nothing gets past you. You do not assume things work because the code looks right. You run tests, hit endpoints, check build output, and read files to verify every acceptance criterion with evidence.
+=== CRITICAL: MATCH YOUR TESTING TO THE TASK TYPE ===
+
+**DIRECT OUTPUT tasks** (files, documents, content):
+→ Just use file_list and file_read to verify the output file exists and has correct content.
+→ Do NOT try to npm install, npm build, or start servers. There is no project to build.
+→ If the task was "create a poem in poem.txt", read poem.txt and check if it has a poem. That's it.
+
+**Simple project tasks** (HTML page, script):
+→ Check files exist and have correct content via file_read.
+→ Only run shell_exec if there's actually something to run (e.g., node script.js).
+
+**Full project tasks** (apps with package.json, build steps):
+→ Run npm install, build, tests, start servers, curl endpoints.
 
 === ARCHITECTURE DOCUMENT ===
 Overview: ${architecture.overview}
@@ -31,40 +43,18 @@ Conventions: ${architecture.conventions}
 ${toolDocs}
 === END TOOLS ===
 
-You are testing a SINGLE TASK. Focus on its acceptance criteria.
+TESTING STEPS:
+1. file_list to see what was built.
+2. file_read key files to verify content matches acceptance criteria.
+3. ONLY IF the task involves runnable code: use shell_exec to run/test it.
+4. Produce your verdict.
 
-YOUR TESTING METHODOLOGY:
-1. EXPLORE FIRST. Use file_list and file_read to understand what was built. Check the file structure matches the architecture doc.
+IMPORTANT:
+- READ-ONLY access. You cannot modify files.
+- Be proportional. A one-file task needs a one-step check, not a full CI pipeline.
+- If acceptance criteria are met, pass it. Do not invent extra requirements.
 
-2. RUN THE CODE. Use shell_exec to:
-   - Run the build (npm run build, npx tsc --noEmit, etc.)
-   - Run tests if they exist (npm test, npx jest, etc.)
-   - Start a server and curl its endpoints if the task involves an API
-   - Execute scripts and check their output
-   - Check for TypeScript errors, lint issues, missing deps
-
-3. VERIFY EACH CRITERION. For every acceptance criterion:
-   - Find the relevant code with file_read
-   - Run a command that proves it works (or fails)
-   - Record the evidence (command output, file contents, error messages)
-
-4. CHECK ARCHITECTURE COMPLIANCE.
-   - Are files in the correct locations per the architecture doc?
-   - Are naming conventions followed?
-   - Is the correct tech stack used?
-
-5. SECURITY SCAN. Quick check for obvious issues:
-   - Env vars used but not validated at startup?
-   - User input passed to shell/SQL/file paths without sanitization?
-   - Secrets hardcoded in source files?
-
-IMPORTANT CONSTRAINTS:
-- You have READ-ONLY access to the sandbox. You can read files and run commands, but you CANNOT modify files. This is intentional — you are a tester, not a fixer.
-- If a command needs to start a server, use a background process and kill it after testing: "node server.js &; sleep 2; curl http://localhost:3000/health; kill %1"
-- Keep shell commands short and focused. Do not install additional packages.
-
-After your investigation, you MUST end your response with a JSON verdict (no tool calls after this).
-The JSON must be the ONLY content in your final message — no text before or after it.
+You MUST end with a JSON verdict (no tool calls after). The JSON must be the ONLY content in your final message.
 
 {
   "passed": true | false,
@@ -72,15 +62,14 @@ The JSON must be the ONLY content in your final message — no text before or af
     {
       "severity": "critical" | "major" | "minor",
       "taskId": "the_task_id",
-      "description": "What is wrong, with evidence (command output, file contents, error messages)",
-      "file": "optional/path/to/file.ts"
+      "description": "What is wrong, with evidence",
+      "file": "optional/path/to/file"
     }
   ],
-  "delta": "Surgical fix instructions for the Builder. Reference files, lines, functions. Include the actual error output you saw."
+  "delta": "Fix instructions for the Builder if failed. Be specific."
 }
 
-passed = true ONLY if there are zero critical and zero major issues.
-Do not include markdown code fences around the JSON.`;
+passed = true if acceptance criteria are met. Do not include markdown code fences around the JSON.`;
 }
 
 /** QA only gets read-only tools — filter from registry */
@@ -154,6 +143,19 @@ export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
     'Build Logs (last 20 entries):',
     ...buildResult.logs.slice(-20).map((l) => `  ${l}`),
     '',
+    ...(req.previousQAResults && req.previousQAResults.length > 0 ? [
+      '',
+      '=== PREVIOUS QA ITERATIONS ===',
+      ...req.previousQAResults.map((prev, i) => [
+        `Iteration ${i + 1}: ${prev.passed ? 'PASSED' : 'FAILED'}`,
+        ...prev.issues.map((issue) => `  [${issue.severity}]${issue.file ? ` ${issue.file}:` : ''} ${issue.description}`),
+        prev.delta ? `  Fix requested: ${prev.delta.slice(0, 200)}` : '',
+      ].filter(Boolean).join('\n')),
+      '',
+      'The builder has attempted fixes since the last QA. Check if previous issues are resolved AND if new issues were introduced.',
+      '=== END PREVIOUS QA ===',
+    ] : []),
+    '',
     'Start by exploring the sandbox with file_list, then read key files and run tests to verify each acceptance criterion.',
   ].join('\n');
 
@@ -179,7 +181,7 @@ export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
 
     const response = await provider.chat({
       model: models.balanced,
-      maxTokens: 8192,
+      maxTokens: 16384,
       system: systemPrompt,
       tools: claudeTools,
       messages,
@@ -208,6 +210,15 @@ export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
       // end_turn — extract JSON verdict from the final text
       const textBlocks = response.content.filter((b) => b.type === 'text');
       const fullText = textBlocks.map((b) => b.type === 'text' ? b.text : '').join('\n');
+
+      // If Gemini returned empty/placeholder, retry up to 2 times
+      if (!fullText.trim() || fullText.includes('[Gemini returned empty response')) {
+        if (iterations < MAX_TOOL_ITERATIONS - 1) {
+          messages.push({ role: 'assistant', content: [{ type: 'text', text: fullText || '(empty)' }] });
+          messages.push({ role: 'user', content: 'Your previous response was empty. Please provide your QA verdict as a JSON object with "passed", "issues", and "delta" fields.' });
+          continue;
+        }
+      }
 
       return parseVerdict(req.runId, task.id, fullText);
     }

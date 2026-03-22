@@ -203,6 +203,7 @@ model Project {
   id          String   @id @default(cuid())
   name        String
   description String?
+  planData    Json?            // Full planner output (preserved for pipeline execution)
   repoUrl     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -266,6 +267,7 @@ model Run {
   projectId String
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   plan      String    @db.Text       // Original brief/plan
+  planData  Json?                     // Full planner output (phases, architecture, etc.)
   status    RunStatus @default(PENDING)
   result    Json?                     // PipelineResult
   createdAt DateTime  @default(now())
@@ -349,6 +351,7 @@ model Card {
   taskId       String?
   repoUrl      String?
   deployUrl    String?
+  output       Json?
   events       CardEvent[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

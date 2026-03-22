@@ -97,11 +97,18 @@ export class GeminiProvider implements AIProvider {
       return { content: [{ type: 'text', text: '' }], stopReason: 'other' };
     }
 
+    const parts = firstCandidate.content?.parts;
+    if (!parts || !Array.isArray(parts) || parts.length === 0) {
+      // Gemini returned a candidate with no content (safety filter, empty response, etc.)
+      const reason = firstCandidate.finishReason ?? 'unknown';
+      return { content: [{ type: 'text', text: `[Gemini returned empty response: ${reason}]` }], stopReason: 'other' };
+    }
+
     // Convert response to our format
     const content: AIContentBlock[] = [];
     let hasToolCalls = false;
 
-    for (const part of firstCandidate.content.parts) {
+    for (const part of parts) {
       if (part.text) {
         content.push({ type: 'text', text: part.text });
       }

@@ -18,6 +18,7 @@ export interface RunRecord {
   id: string;
   projectId: string;
   plan: string;
+  planData?: unknown;
   status: RunStatus;
   result: unknown;
   createdAt: Date;

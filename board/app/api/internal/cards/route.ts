@@ -7,13 +7,14 @@ export async function POST(req: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const body = await req.json();
-  const { title, description, status, runId, phaseId, taskId } = body as {
+  const { title, description, status, runId, phaseId, taskId, projectId } = body as {
     title?: string;
     description?: string;
     status?: string;
     runId?: string;
     phaseId?: string;
     taskId?: string;
+    projectId?: string;
   };
 
   if (!title?.trim() || !description?.trim()) {
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
       runId: runId ?? null,
       phaseId: phaseId ?? null,
       taskId: taskId ?? null,
+      projectId: projectId ?? null,
     },
   });
 

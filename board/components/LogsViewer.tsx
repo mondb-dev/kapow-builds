@@ -4,18 +4,13 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
 const SERVICES = [
-  { id: 'actions', label: 'Actions', color: 'text-purple-400' },
-  { id: 'planner', label: 'Planner', color: 'text-blue-400' },
-  { id: 'builder', label: 'Builder', color: 'text-green-400' },
-  { id: 'qa', label: 'QA', color: 'text-amber-400' },
-  { id: 'gate', label: 'Gate', color: 'text-red-400' },
+  { id: 'pipeline', label: 'Pipeline', color: 'text-purple-400' },
   { id: 'technician', label: 'Technician', color: 'text-cyan-400' },
-  { id: 'security', label: 'Security', color: 'text-orange-400' },
-  { id: 'comms', label: 'Comms', color: 'text-pink-400' },
+  { id: 'board', label: 'Board', color: 'text-green-400' },
 ];
 
 export function LogsViewer() {
-  const [service, setService] = useState('actions');
+  const [service, setService] = useState('pipeline');
   const [lines, setLines] = useState<string[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [polling, setPolling] = useState(true);

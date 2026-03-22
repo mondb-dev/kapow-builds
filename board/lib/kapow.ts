@@ -1,6 +1,6 @@
 import { getInternalAuthHeaders } from './internal';
 
-const KAPOW_URL = process.env.KAPOW_ACTIONS_URL ?? 'http://localhost:3000';
+const KAPOW_URL = process.env.KAPOW_ACTIONS_URL ?? 'http://127.0.0.1:3000';
 
 export interface PipelineStatus {
   status: string;

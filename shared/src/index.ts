@@ -11,3 +11,4 @@ export {
 } from './internal-auth.js';
 export { getProvider, getModels, getAI, AnthropicProvider, GeminiProvider } from './ai/index.js';
 export type { AIProvider, AIMessage, AIContentBlock, AIToolDef, AIResponse, ModelMap } from './ai/index.js';
+export { embed, embedBatch, toPgVector, EMBEDDING_DIM } from './ai/embeddings.js';

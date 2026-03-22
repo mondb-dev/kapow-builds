@@ -77,6 +77,7 @@ export default async function ProjectKanbanPage({ params }: Params) {
         initialCards={JSON.parse(JSON.stringify(cards))}
         currentUserId={session.user.id}
         currentUserName={session.user.name ?? 'You'}
+        projectId={projectId}
       />
     </div>
   );

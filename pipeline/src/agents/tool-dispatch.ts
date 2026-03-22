@@ -1,14 +1,11 @@
 /**
  * Dynamic Tool Dispatch
  *
- * Replaces the hardcoded switch statement in builder.ts.
- * Tools register themselves at startup. When the technician
- * creates a new tool, its executor can be hot-registered here.
- *
- * Core tools (file, shell, git, browser, deploy) are registered
- * on boot. Dynamic tools from the registry can register executors
- * at runtime via registerTool().
+ * Core tools (file, shell, git, browser, deploy) are registered on boot.
+ * When the builder needs an unknown tool, we ask the technician to find
+ * or create it, then hot-register its executor for future use.
  */
+import axios from 'axios';
 
 export type ToolExecutor = (
   input: Record<string, unknown>,
@@ -16,6 +13,7 @@ export type ToolExecutor = (
 ) => Promise<string>;
 
 const registry = new Map<string, ToolExecutor>();
+const TECHNICIAN_URL = process.env.TECHNICIAN_URL ?? 'http://localhost:3006';
 
 /** Register a tool executor by name */
 export function registerTool(name: string, executor: ToolExecutor): void {
@@ -32,15 +30,80 @@ export function registeredTools(): string[] {
   return Array.from(registry.keys());
 }
 
-/** Execute a tool by name. Returns result string or error message. */
+/**
+ * Request a tool from the technician. If found or created,
+ * hot-register a shell-based executor and return the tool info.
+ */
+async function requestToolFromTechnician(
+  name: string,
+  runId: string,
+): Promise<{ found: boolean; message: string }> {
+  try {
+    const res = await axios.post(`${TECHNICIAN_URL}/request-tool`, {
+      runId,
+      need: `Tool "${name}" was called but does not exist locally. The builder needs this capability to complete its task.`,
+      requestingAgent: 'builder',
+      context: `The builder attempted to use a tool called "${name}" but it is not registered. Available tools: ${registeredTools().join(', ')}`,
+    }, { timeout: 60_000 });
+
+    const outcome = res.data?.outcome;
+    if (!outcome) return { found: false, message: 'Technician returned no outcome' };
+
+    if (outcome.action === 'found_existing' || outcome.action === 'created_new' || outcome.action === 'updated_existing') {
+      const tool = outcome.tool;
+      if (tool?.implementation && tool?.name) {
+        // Hot-register a dynamic executor that evals the implementation
+        registerDynamicTool(tool.name, tool.implementation);
+        return { found: true, message: `Technician provided tool "${tool.name}": ${tool.description}` };
+      }
+      return { found: false, message: `Technician found tool but no executable implementation` };
+    }
+
+    return { found: false, message: outcome.error ?? `Technician action: ${outcome.action}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { found: false, message: `Technician request failed: ${msg}` };
+  }
+}
+
+/** Register a dynamic tool from its implementation code string */
+function registerDynamicTool(name: string, implementation: string): void {
+  registerTool(name, async (input, sandboxPath) => {
+    try {
+      // Dynamic tools are Node.js functions — create and execute them
+      const fn = new Function('input', 'sandboxPath', 'require', implementation);
+      const result = await fn(input, sandboxPath, require);
+      return typeof result === 'string' ? result : JSON.stringify(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return `Dynamic tool error (${name}): ${msg}`;
+    }
+  });
+}
+
+// Track current runId for technician requests
+let currentRunId = 'unknown';
+export function setCurrentRunId(runId: string): void {
+  currentRunId = runId;
+}
+
+/** Execute a tool by name. If unknown, ask the technician first. */
 export async function dispatchTool(
   name: string,
   input: Record<string, unknown>,
   sandboxPath: string,
 ): Promise<string> {
-  const executor = registry.get(name);
+  let executor = registry.get(name);
+
+  // If tool is unknown, ask the technician
   if (!executor) {
-    return `Unknown tool: ${name}. Available tools: ${registeredTools().join(', ')}. If this tool was recently created by the technician, its executor may not be registered yet.`;
+    const result = await requestToolFromTechnician(name, currentRunId);
+    if (result.found) {
+      executor = registry.get(name);
+    }
+    if (!executor) {
+      return `Unknown tool: ${name}. ${result.message}. Available tools: ${registeredTools().join(', ')}`;
+    }
   }
 
   try {

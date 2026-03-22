@@ -10,10 +10,20 @@ export interface CardCreatePayload {
   runId: string;
   phaseId: string;
   taskId: string;
+  projectId?: string;
 }
 
 export interface CardUpdatePayload {
   status?: 'BACKLOG' | 'IN_PROGRESS' | 'QA' | 'DONE' | 'FAILED';
+  output?: CardOutput;
+}
+
+export interface CardOutput {
+  type: 'files' | 'url' | 'summary';
+  files?: Array<{ name: string; path: string; size?: number }>;
+  url?: string;
+  summary?: string;
+  runId?: string;
 }
 
 export interface CardEventPayload {
@@ -24,8 +34,10 @@ export interface CardEventPayload {
 interface CardResponse {
   id: string;
   title: string;
+  description?: string;
   status: string;
   taskId?: string | null;
+  phaseId?: string | null;
 }
 
 /**
@@ -79,6 +91,21 @@ export class BoardClient {
       await axios.patch(
         `${this.baseUrl}/api/internal/cards/${cardId}`,
         { status },
+        {
+          timeout: 10_000,
+          headers: getInternalAuthHeaders(),
+        }
+      );
+    } catch (err) {
+      console.error(`Board: failed to update card ${cardId}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  async updateCard(cardId: string, payload: CardUpdatePayload): Promise<void> {
+    try {
+      await axios.patch(
+        `${this.baseUrl}/api/internal/cards/${cardId}`,
+        payload,
         {
           timeout: 10_000,
           headers: getInternalAuthHeaders(),

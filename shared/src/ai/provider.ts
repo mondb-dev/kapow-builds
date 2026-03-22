@@ -23,12 +23,18 @@ const GEMINI_MODELS: ModelMap = {
   fast: 'gemini-2.5-flash',
 };
 
-// Allow overrides via env
+// Allow overrides via env — service-scoped keys take priority
+function getScopedModel(key: string): string | undefined {
+  const serviceName = process.env.SERVICE_NAME?.trim().toUpperCase().replace(/-/g, '_');
+  if (!serviceName) return undefined;
+  return process.env[`${serviceName}_${key}`];
+}
+
 function loadModelMap(defaults: ModelMap): ModelMap {
   return {
-    strong: process.env.AI_MODEL_STRONG ?? defaults.strong,
-    balanced: process.env.AI_MODEL_BALANCED ?? defaults.balanced,
-    fast: process.env.AI_MODEL_FAST ?? defaults.fast,
+    strong: getScopedModel('AI_MODEL_STRONG') ?? process.env.AI_MODEL_STRONG ?? defaults.strong,
+    balanced: getScopedModel('AI_MODEL_BALANCED') ?? process.env.AI_MODEL_BALANCED ?? defaults.balanced,
+    fast: getScopedModel('AI_MODEL_FAST') ?? process.env.AI_MODEL_FAST ?? defaults.fast,
   };
 }
 

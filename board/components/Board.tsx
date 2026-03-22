@@ -20,7 +20,7 @@ interface CardData {
   status: CardStatus;
   assigneeType: AssigneeType;
   assignee: CardUser | null;
-  creator: CardUser;
+  creator: CardUser | null;
   repoUrl: string | null;
   deployUrl: string | null;
   runId: string | null;
@@ -32,6 +32,7 @@ interface BoardProps {
   initialCards: CardData[];
   currentUserId: string;
   currentUserName: string;
+  projectId?: string;
 }
 
 const COLUMNS: { status: CardStatus; label: string; color: string; headerColor: string; dotColor: string }[] = [
@@ -42,7 +43,7 @@ const COLUMNS: { status: CardStatus; label: string; color: string; headerColor: 
   { status: 'FAILED', label: 'Failed', color: 'border-red-800/60', headerColor: 'text-red-400', dotColor: 'bg-red-500' },
 ];
 
-export function Board({ initialCards, currentUserId, currentUserName }: BoardProps) {
+export function Board({ initialCards, currentUserId, currentUserName, projectId }: BoardProps) {
   const [cards, setCards] = useState<CardData[]>(initialCards);
   const [showAddModal, setShowAddModal] = useState(false);
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
@@ -50,10 +51,11 @@ export function Board({ initialCards, currentUserId, currentUserName }: BoardPro
 
   void currentUserName;
 
-  // Poll every 10s for updates
+  // Poll every 5s for updates
   const fetchCards = useCallback(async () => {
     try {
-      const res = await fetch('/api/cards');
+      const url = projectId ? `/api/cards?projectId=${projectId}` : '/api/cards';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         const arr = Array.isArray(data) ? data : data.cards;
@@ -62,10 +64,10 @@ export function Board({ initialCards, currentUserId, currentUserName }: BoardPro
     } catch {
       // silent fail — don't disrupt the UI
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
-    const interval = setInterval(fetchCards, 10_000);
+    const interval = setInterval(fetchCards, 5_000);
     return () => clearInterval(interval);
   }, [fetchCards]);
 

@@ -21,6 +21,14 @@ interface CardEventData {
   createdAt: string;
 }
 
+interface CardOutput {
+  type: 'files' | 'url' | 'summary';
+  files?: Array<{ name: string; path: string; size?: number }>;
+  url?: string;
+  summary?: string;
+  runId?: string;
+}
+
 interface CardData {
   id: string;
   title: string;
@@ -28,9 +36,10 @@ interface CardData {
   status: CardStatus;
   assigneeType: AssigneeType;
   assignee: CardUser | null;
-  creator: CardUser;
+  creator: CardUser | null;
   repoUrl: string | null;
   deployUrl: string | null;
+  output: CardOutput | null;
   runId: string | null;
   createdAt: string;
   events: CardEventData[];
@@ -105,8 +114,8 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
           return [...prev, data as CardEventData];
         });
 
-        // If status changed on the event side, re-fetch card
-        if (data.type === 'SUCCESS' || data.type === 'ERROR') {
+        // Re-fetch card on status-changing events (PROGRESS = build/QA transitions)
+        if (data.type === 'SUCCESS' || data.type === 'ERROR' || data.type === 'PROGRESS') {
           fetch(`/api/cards/${card.id}`)
             .then((r) => r.json())
             .then((updated) => setCard(updated))
@@ -194,7 +203,7 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
     }
   }
 
-  const isAgentRunning = card.assigneeType === 'AGENT' && (card.status === 'IN_PROGRESS' || card.status === 'QA');
+  const isAgentRunning = card.assigneeType === 'AGENT' && Boolean(card.runId) && !['DONE', 'FAILED'].includes(card.status);
   const canControlRun = card.assigneeType === 'AGENT' && Boolean(card.runId);
 
   return (
@@ -359,6 +368,59 @@ export function CardDetail({ card: initialCard, currentUserId, currentUserName, 
               </a>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Output */}
+      {card.output && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Output</h2>
+
+          {card.output.summary && (
+            <p className="text-sm text-gray-300">{card.output.summary}</p>
+          )}
+
+          {card.output.url && (
+            <a
+              href={card.output.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 bg-blue-950/30 border border-blue-900/50 rounded-lg px-3 py-2 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              {card.output.url}
+            </a>
+          )}
+
+          {card.output.files && card.output.files.length > 0 && (
+            <div className="space-y-1">
+              {card.output.files.map((file, i) => {
+                const downloadUrl = card.output?.runId
+                  ? `/api/artifacts?runId=${encodeURIComponent(card.output.runId)}&path=${encodeURIComponent(file.path)}`
+                  : null;
+                return (
+                  <a
+                    key={i}
+                    href={downloadUrl ?? '#'}
+                    download={file.name}
+                    className={`flex items-center gap-2 text-xs bg-gray-950/50 rounded-lg px-3 py-2 transition-colors ${
+                      downloadUrl
+                        ? 'text-blue-400 hover:text-blue-300 hover:bg-gray-950/80 cursor-pointer'
+                        : 'text-gray-400 cursor-default'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    <span className="font-mono truncate">{file.name}</span>
+                    <span className="text-gray-700 truncate ml-auto">{file.path}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

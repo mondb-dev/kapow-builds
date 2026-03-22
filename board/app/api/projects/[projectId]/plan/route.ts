@@ -3,8 +3,12 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getInternalAuthHeaders } from '@/lib/internal';
 import { userCanAccessProject } from '@/lib/authz';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
-const PIPELINE_URL = process.env.KAPOW_ACTIONS_URL ?? process.env.PLANNER_URL ?? 'http://localhost:3000';
+const UPLOAD_DIR = process.env.UPLOAD_DIR ?? join(process.cwd(), '..', 'uploads');
+
+const PIPELINE_URL = process.env.KAPOW_ACTIONS_URL ?? process.env.PLANNER_URL ?? 'http://127.0.0.1:3000';
 
 interface Params {
   params: Promise<{ projectId: string }>;
@@ -18,7 +22,10 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const { projectId } = await params;
   const body = await req.json();
-  const { brief } = body as { brief: string; attachments?: unknown[] };
+  const { brief, attachments } = body as {
+    brief: string;
+    attachments?: Array<{ id: string; name: string; filename: string; mimeType: string }>;
+  };
 
   if (!(await userCanAccessProject(session.user.id, projectId)) && !session.user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -33,6 +40,33 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
+  // Read text-based attachments and include as planner context
+  const TEXT_TYPES = new Set(['text/plain', 'text/markdown', 'text/csv', 'application/json', 'text/html']);
+  const TEXT_EXTS = new Set(['txt', 'md', 'csv', 'json', 'html', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'ts', 'js', 'py', 'rb', 'go', 'rs', 'java', 'sh', 'sql', 'graphql', 'proto', 'env', 'dockerfile', 'makefile']);
+  let attachmentContext = '';
+  if (attachments?.length) {
+    const parts: string[] = [];
+    for (const att of attachments) {
+      const ext = att.filename.split('.').pop()?.toLowerCase() ?? '';
+      const isText = TEXT_TYPES.has(att.mimeType) || TEXT_EXTS.has(ext);
+      if (!isText) {
+        parts.push(`[Attachment: ${att.name} (${att.mimeType}) — binary file, not included as text]`);
+        continue;
+      }
+      const filePath = join(UPLOAD_DIR, att.filename);
+      if (!existsSync(filePath)) continue;
+      try {
+        const content = readFileSync(filePath, 'utf-8').slice(0, 50000);
+        parts.push(`=== Attachment: ${att.name} ===\n${content}\n=== End ${att.name} ===`);
+      } catch {
+        parts.push(`[Attachment: ${att.name} — could not read]`);
+      }
+    }
+    if (parts.length > 0) {
+      attachmentContext = '\n\n--- Attached Files ---\n' + parts.join('\n\n');
+    }
+  }
+
   try {
     // Call the planner service
     const planRes = await fetch(`${PIPELINE_URL}/plan`, {
@@ -43,7 +77,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
       body: JSON.stringify({
         runId: `plan-${projectId}`,
-        plan: brief,
+        plan: brief + attachmentContext,
       }),
       signal: AbortSignal.timeout(180_000),
     });
@@ -95,6 +129,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         cards.push(card);
       }
     }
+
+    // Store full planner output for pipeline execution
+    await db.project.update({
+      where: { id: projectId },
+      data: { planData: projectPlan as unknown as Record<string, unknown> },
+    });
 
     // Update project description with architecture info if available
     if (projectPlan.architecture?.overview) {

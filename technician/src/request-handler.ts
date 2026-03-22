@@ -1,4 +1,5 @@
 import { getAI } from 'kapow-shared';
+import { findRelevantTools } from 'kapow-db/tools';
 import { loadTools, upsertTool } from './registry.js';
 import { researchTool } from './researcher.js';
 import { buildTool } from './implementer.js';
@@ -39,7 +40,19 @@ export async function handleToolRequest(request: ToolRequest): Promise<ToolReque
   const { runId } = request;
 
   try {
-    // Step 1: Triage — decide what to do
+    // Step 0: Quick vector search — if a close match exists, return it immediately
+    try {
+      const vectorMatches = await findRelevantTools(request.need, 1);
+      if (vectorMatches.length > 0) {
+        const match = vectorMatches[0];
+        console.log(`[${runId}] Vector match found: ${match.name} — skipping LLM triage`);
+        return { runId, outcome: { action: 'found_existing', tool: match } };
+      }
+    } catch (err) {
+      console.error(`[${runId}] Vector search failed, falling back to LLM triage:`, err instanceof Error ? err.message : err);
+    }
+
+    // Step 1: Triage — decide what to do (LLM-based)
     const existingTools = (await loadTools()).filter((t) => t.status === 'ready');
     const decision = await triageRequest(request, existingTools);
 

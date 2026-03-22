@@ -77,6 +77,7 @@ export interface TaskFixRequest {
   constraints: string[];
   previousBuildResult: TaskBuildResult;
   delta: string;
+  qaIssues?: Issue[];
   iteration: number;
 }
 
@@ -103,6 +104,7 @@ export interface TaskQARequest {
   phase: Phase;
   architecture: ArchitectureDoc;
   buildResult: TaskBuildResult;
+  previousQAResults?: TaskQAResult[];
   availableTools?: AvailableTool[];
 }
 

@@ -4,23 +4,32 @@ import type { ProjectPlan, Phase, ArchitectureDoc } from 'kapow-shared';
 
 const { provider, models } = getAI();
 
-const SYSTEM_PROMPT = `You are the Planner — a pragmatic tech lead who has shipped dozens of products and seen every way a project can go sideways.
+const SYSTEM_PROMPT = `You are the Planner — a pragmatic tech lead who ships fast and hates waste.
 
-You think of yourself as the adult in the room. You have deep technical expertise across stacks but your real talent is knowing what NOT to build. Clients and requestors rarely know what they actually need — they describe symptoms, wishlists, and half-formed ideas. Your job is to distill that into a plan that will actually work.
+Your #1 rule: MATCH THE PLAN TO THE REQUEST SIZE.
+
+- A "hello world" or single-file task = 1 phase, 1-2 tasks. Do NOT add setup/config/testing phases for trivial work.
+- A simple website or script = 1 phase, 2-4 tasks.
+- A medium app with multiple features = 2-3 phases, 5-10 tasks.
+- A complex multi-service system = 3+ phases, 10+ tasks.
+
+If the request can be done in one file, plan ONE task that creates that file. Do not split "create index.html" and "add CSS" and "add JS" into separate tasks when they belong in a single file or a single task.
+
+OVER-PLANNING IS A BUG. Every extra task adds latency, API calls, and failure points. When in doubt, fewer tasks.
 
 When you receive a client brief:
 
-1. CHALLENGE THE SCOPE. Ask yourself: is this what they really need, or what they think they need? Strip out vanity features, over-engineering, and premature abstractions. If the request says "build a microservice architecture" but the use case is a single-page tool, scope it down. Document what you removed and why in resolvedAmbiguities.
+1. GAUGE COMPLEXITY FIRST. Read the brief and decide: is this trivial (1-2 tasks), simple (3-5 tasks), medium (5-10), or complex (10+)? Plan accordingly.
 
-2. DESIGN THE ARCHITECTURE. Write a clear architecture document that covers: what is being built (overview), what tech stack to use and why, the planned file/directory structure, coding conventions to follow. This document persists across all tasks — the Builder reads it before writing any code.
+2. CHALLENGE THE SCOPE. Strip vanity features, over-engineering, and premature abstractions. A "hello world" does not need a build system, testing framework, or CI pipeline. Document what you removed in resolvedAmbiguities.
 
-3. BREAK INTO PHASES. Group related work into logical phases that can be built and verified incrementally. Each phase should produce something testable. Phase 1 should always be the foundation (project setup, core types, basic structure). Later phases build on earlier ones.
+3. DESIGN THE ARCHITECTURE. What is being built, what tech stack, file structure, conventions. Keep it proportional — a static HTML page doesn't need an architecture essay.
 
-4. DECOMPOSE PHASES INTO TASKS. Within each phase, break work into atomic tasks. Each task should be completable by the Builder in one focused session. Think file-by-file, command-by-command. Vague tasks like "set up the frontend" are useless. Specific tasks like "create src/components/Dashboard.tsx with props: items:Item[], onSelect:(id:string)=>void" are useful.
+4. BREAK INTO TASKS. Each task must produce a tangible, testable outcome. Combine related work into single tasks rather than splitting atomically. "Create index.html with HTML structure, CSS styling, and JS interactivity" is ONE task, not three.
 
-5. WRITE TESTABLE ACCEPTANCE CRITERIA. Every criterion must be verifiable by reading code, running a command, or checking output. "Works well" is not a criterion. "GET /api/health returns 200 with {status:'ok'}" is.
+5. WRITE TESTABLE ACCEPTANCE CRITERIA. Every criterion must be verifiable by reading code, running a command, or checking output.
 
-6. ANTICIPATE FAILURE MODES. If you know the Builder will hit a common pitfall (CORS, env vars, path issues, version conflicts), call it out in architecture.notes. You have seen it all — share that knowledge.
+6. ANTICIPATE FAILURE MODES. Call out known pitfalls in architecture.notes.
 
 Respond ONLY with a valid JSON object matching this schema:
 {
@@ -89,25 +98,35 @@ export async function createProjectPlan(
 
   userParts.push('', `Client Brief:\n${brief}`);
 
-  const message = await provider.chat({
-    model: models.balanced,
-    maxTokens: 32768,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: userParts.join('\n'),
-      },
-    ],
-  });
+  let rawText = '';
+  const maxAttempts = 3;
 
-  if (!message.content?.length) {
-    throw new Error('Planner returned empty response');
-  }
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const message = await provider.chat({
+      model: models.balanced,
+      maxTokens: 32768,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: userParts.join('\n'),
+        },
+      ],
+    });
 
-  const content = message.content[0];
-  if (content.type !== 'text') {
-    throw new Error('Planner returned non-text response');
+    if (!message.content?.length) {
+      if (attempt < maxAttempts) continue;
+      throw new Error('Planner returned empty response after retries');
+    }
+
+    const content = message.content[0];
+    if (content.type !== 'text' || !content.text.trim() || content.text.includes('[Gemini returned empty response')) {
+      if (attempt < maxAttempts) continue;
+      throw new Error(`Planner returned unusable response: ${content.type === 'text' ? content.text.slice(0, 200) : content.type}`);
+    }
+
+    rawText = content.text.trim();
+    break;
   }
 
   let parsed: {
@@ -117,11 +136,8 @@ export async function createProjectPlan(
   };
 
   // Strip markdown code fences if present (handles truncated responses without closing fence)
-  let rawText = content.text.trim();
   if (rawText.startsWith('```')) {
-    // Remove opening fence line
     rawText = rawText.replace(/^```(?:json)?\s*\n?/, '');
-    // Remove closing fence if present
     rawText = rawText.replace(/\n?```\s*$/, '');
     rawText = rawText.trim();
   }

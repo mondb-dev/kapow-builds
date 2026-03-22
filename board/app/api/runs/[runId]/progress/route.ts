@@ -6,7 +6,7 @@ import { userCanAccessRun } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
-const KAPOW_URL = process.env.KAPOW_ACTIONS_URL ?? 'http://localhost:3000';
+const KAPOW_URL = process.env.KAPOW_ACTIONS_URL ?? 'http://127.0.0.1:3000';
 
 interface Params {
   params: Promise<{ runId: string }>;

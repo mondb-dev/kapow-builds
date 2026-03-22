@@ -1,5 +1,6 @@
 import { prisma } from './client.js';
 import type { ToolStatus as PrismaToolStatus } from '@prisma/client';
+import { embed, toPgVector } from 'kapow-shared';
 
 export type ToolStatus = 'researching' | 'building' | 'testing' | 'ready' | 'failed' | 'deprecated';
 
@@ -116,6 +117,48 @@ export async function queryTools(opts: {
   return rows.map(toToolRecord);
 }
 
+/** Find tools relevant to a need description using vector similarity */
+export async function findRelevantTools(need: string, maxResults = 5): Promise<ToolRecord[]> {
+  try {
+    const queryEmbedding = await embed(need);
+    const pgVec = toPgVector(queryEmbedding);
+
+    const rows = await prisma.$queryRawUnsafe<Array<{
+      id: string; name: string; description: string; version: number;
+      status: PrismaToolStatus; parameters: unknown; returnType: string;
+      implementation: string; testCode: string; tags: string[];
+      doc: unknown; createdBy: string; createdAt: Date; updatedAt: Date;
+    }>>(
+      `SELECT id, name, description, version, status, parameters, "returnType",
+              implementation, "testCode", tags, doc, "createdBy", "createdAt", "updatedAt"
+       FROM "Tool"
+       WHERE embedding IS NOT NULL AND status = 'READY'
+       ORDER BY embedding <=> $1::vector
+       LIMIT $2`,
+      pgVec,
+      maxResults,
+    );
+
+    if (rows.length > 0) return rows.map(toToolRecord);
+  } catch (err) {
+    console.error(`[tools] Vector search failed:`, err instanceof Error ? err.message : err);
+  }
+
+  // Fallback to text search
+  return queryTools({ status: 'ready', search: need.split(/\s+/).slice(0, 3).join(' ') });
+}
+
+async function embedTool(tool: { id: string; name: string; description: string; tags: string[]; doc?: ToolDoc | null }): Promise<void> {
+  const text = `${tool.name}. ${tool.description}. Tags: ${tool.tags.join(', ')}. ${tool.doc?.summary ?? ''}`;
+  const embedding = await embed(text);
+  const pgVec = toPgVector(embedding);
+  await prisma.$executeRawUnsafe(
+    `UPDATE "Tool" SET embedding = $1::vector WHERE id = $2`,
+    pgVec,
+    tool.id,
+  );
+}
+
 // ── Mutations ────────────────────────────────────────────────────────
 
 export async function upsertTool(tool: Omit<ToolRecord, 'createdAt' | 'updatedAt'>): Promise<ToolRecord> {
@@ -148,6 +191,12 @@ export async function upsertTool(tool: Omit<ToolRecord, 'createdAt' | 'updatedAt
       doc: tool.doc ? JSON.parse(JSON.stringify(tool.doc)) : undefined,
     },
   });
+
+  // Embed asynchronously
+  embedTool({ id: tool.id, name: tool.name, description: tool.description, tags: tool.tags, doc: tool.doc }).catch((err) => {
+    console.error(`[tools] Failed to embed tool ${tool.id}:`, err instanceof Error ? err.message : err);
+  });
+
   return toToolRecord(row);
 }
 

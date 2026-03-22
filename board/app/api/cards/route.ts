@@ -13,10 +13,15 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10) || 50));
   const skip = (page - 1) * limit;
+  const projectId = searchParams.get('projectId');
+
+  const where = projectId
+    ? { projectId, ...cardAccessWhere(session.user.id) }
+    : cardAccessWhere(session.user.id);
 
   const [cards, total] = await Promise.all([
     db.card.findMany({
-      where: cardAccessWhere(session.user.id),
+      where,
       include: {
         assignee: { select: { id: true, name: true, image: true } },
         creator: { select: { id: true, name: true, image: true } },
@@ -26,7 +31,7 @@ export async function GET(req: NextRequest) {
       skip,
       take: limit,
     }),
-    db.card.count({ where: cardAccessWhere(session.user.id) }),
+    db.card.count({ where }),
   ]);
 
   return NextResponse.json({ cards, total, page, limit });

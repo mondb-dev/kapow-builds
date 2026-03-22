@@ -29,7 +29,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   try {
     const project = await db.project.findUnique({
       where: { id: projectId },
-      select: { id: true, description: true },
+      select: { id: true, description: true, planData: true },
     });
 
     if (!project) {
@@ -76,6 +76,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       data: {
         projectId,
         plan: brief,
+        planData: project.planData ?? undefined,
       },
     });
 
