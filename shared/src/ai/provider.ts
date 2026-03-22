@@ -8,6 +8,7 @@
 import type { AIProvider, ModelMap } from './types.js';
 import { AnthropicProvider } from './anthropic.js';
 import { GeminiProvider } from './gemini.js';
+import { OllamaProvider } from './ollama.js';
 
 // ── Model Maps ───────────────────────────────────────────────────────
 
@@ -21,6 +22,12 @@ const GEMINI_MODELS: ModelMap = {
   strong: 'gemini-2.5-pro',
   balanced: 'gemini-2.5-flash',
   fast: 'gemini-2.5-flash',
+};
+
+const OLLAMA_MODELS: ModelMap = {
+  strong: 'qwen2.5:14b',
+  balanced: 'qwen2.5:14b',
+  fast: 'qwen2.5:7b',
 };
 
 // Allow overrides via env — service-scoped keys take priority
@@ -53,6 +60,10 @@ export function getProvider(): AIProvider {
     case 'google':
       cachedProvider = new GeminiProvider();
       break;
+    case 'ollama':
+    case 'local':
+      cachedProvider = new OllamaProvider();
+      break;
     case 'anthropic':
     case 'claude':
     default:
@@ -74,6 +85,10 @@ export function getModels(): ModelMap {
     case 'google':
       cachedModels = loadModelMap(GEMINI_MODELS);
       break;
+    case 'ollama':
+    case 'local':
+      cachedModels = loadModelMap(OLLAMA_MODELS);
+      break;
     case 'anthropic':
     case 'claude':
     default:
@@ -87,4 +102,15 @@ export function getModels(): ModelMap {
 /** Convenience: get provider + models in one call */
 export function getAI(): { provider: AIProvider; models: ModelMap } {
   return { provider: getProvider(), models: getModels() };
+}
+
+/** Get a local Ollama provider for cheap recipe-matched tasks */
+export function getLocalAI(): { provider: AIProvider; models: ModelMap } | null {
+  try {
+    const provider = new OllamaProvider();
+    const models = loadModelMap(OLLAMA_MODELS);
+    return { provider, models };
+  } catch {
+    return null;
+  }
 }
