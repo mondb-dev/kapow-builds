@@ -158,6 +158,26 @@ Rule: if a recipe describes *how to implement* something, it's a tool-in-disguis
 | Technician  | Tool research, implementation, tests, registry | Project code, agent prompts          |
 | Orchestrator | Run state, agent sequencing, ToolRequest plumbing | LLM reasoning of any kind         |
 
+## Observability schema
+
+Existing tables (`RunLog`, `AuditEntry`, `SecurityAlert`, `CardEvent`, `RunArtifact`) capture *what happened*. These five new tables capture *why*, *how much*, and *what left the box* — so any run can be reconstructed end-to-end.
+
+| Table | Captures | Primary use |
+|---|---|---|
+| `LlmCall` | runId, agent, model, prompt, response, tokens, costUsd, durationMs, cacheHit | Cost attribution, prompt debugging |
+| `ToolCall` | runId, agent, toolName, toolVersion, args, result, durationMs, ok | Tool reliability, dispatch debugging |
+| `AgentDecision` | runId, agent, decisionType, reasoning, inputs, output | Postmortems, gate/retry analysis |
+| `ExternalCall` | runId, target (gcp/github/technician), method, path, status, costUsd, durationMs | Egress audit, infra cost trail |
+| `Approval` | runId, requestedAt, channel, payload, decidedBy, decision, decidedAt | Approval gate state, replay |
+
+### Operational rules
+
+- **Add incrementally.** Start with `LlmCall` and `ToolCall` — they cover ~80% of "what did the agent do".
+- **Large payloads go to object storage.** Prompt/response > 8 KB writes to a GCS bucket; Postgres stores the pointer. Avoids row bloat.
+- **Retention.** `LlmCall` and `ToolCall` purge after 30 days. `AgentDecision`, `Approval`, `ExternalCall` kept indefinitely (they're the audit trail). `Run` and `Card` never auto-purged.
+- **Indexes.** All five tables index `(runId)` and `(createdAt)`. Cost queries also need `(createdAt, costUsd)` for time-range rollups.
+- **`RunLog.metadata` discipline.** Define a TS discriminated union for log payloads so the board renders them without guessing.
+
 ## Migration notes
 
 The existing prompts in [planner.ts](../pipeline/src/agents/planner.ts), [builder.ts](../pipeline/src/agents/builder.ts), and [qa.ts](../pipeline/src/agents/qa.ts) become `AGENTS.md` files. The existing [tool-registration.ts](../pipeline/src/agents/tool-registration.ts) and [tool-dispatch.ts](../pipeline/src/agents/tool-dispatch.ts) collapse into a thin technician client. Gate stays as-is (no LLM, no md).

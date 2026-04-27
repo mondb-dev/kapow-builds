@@ -1,0 +1,144 @@
+// Draft additions for db/prisma/schema.prisma — observability layer.
+// Review then merge into the main schema and run `prisma migrate dev`.
+//
+// Conventions:
+// - All tables index runId + createdAt.
+// - Large payloads (prompt/response/args/result over ~8KB) should be written
+//   to a GCS bucket and only the pointer stored here. Use the *Ref fields.
+// - Costs in micro-USD (Int) to avoid float drift; divide by 1_000_000 to display.
+
+// ── LlmCall ──────────────────────────────────────────────────────────
+// Every LLM invocation. The bread-and-butter cost + debugging table.
+
+model LlmCall {
+  id            String   @id @default(cuid())
+  runId         String
+  run           Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  agent         String   // 'planner' | 'builder' | 'qa' | 'technician' | etc.
+  provider      String   // 'anthropic' | 'gemini' | 'ollama' | 'vertex'
+  model         String   // e.g. 'claude-opus-4-7'
+  promptText    String?  @db.Text         // null when promptRef is set
+  promptRef     String?                   // gs://bucket/runId/llm/<id>.prompt.txt
+  responseText  String?  @db.Text
+  responseRef   String?
+  inputTokens   Int      @default(0)
+  outputTokens Int      @default(0)
+  cacheReadTokens  Int   @default(0)
+  cacheWriteTokens Int   @default(0)
+  costMicroUsd  Int      @default(0)
+  durationMs    Int      @default(0)
+  cacheHit      Boolean  @default(false)
+  ok            Boolean  @default(true)
+  errorMessage  String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  @@index([runId])
+  @@index([agent])
+  @@index([createdAt])
+  @@index([createdAt, costMicroUsd])
+}
+
+// ── ToolCall ─────────────────────────────────────────────────────────
+// Every tool dispatch from any agent.
+
+model ToolCall {
+  id          String   @id @default(cuid())
+  runId       String
+  run         Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  agent       String   // which agent invoked it
+  toolName    String
+  toolVersion Int
+  argsJson    Json?
+  argsRef     String?  // for oversized args
+  resultJson  Json?
+  resultRef   String?
+  durationMs  Int      @default(0)
+  ok          Boolean  @default(true)
+  errorMessage String? @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([runId])
+  @@index([toolName])
+  @@index([ok])
+  @@index([createdAt])
+}
+
+// ── AgentDecision ────────────────────────────────────────────────────
+// Why an agent chose what it chose. Kept indefinitely — this IS the audit trail.
+
+model AgentDecision {
+  id           String   @id @default(cuid())
+  runId        String
+  run          Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  agent        String
+  decisionType String   // 'card_split' | 'retry_verdict' | 'tool_request' | 'gate_pass' | ...
+  reasoning    String   @db.Text
+  inputsJson   Json?
+  outputJson   Json?
+  createdAt    DateTime @default(now())
+
+  @@index([runId])
+  @@index([decisionType])
+  @@index([createdAt])
+}
+
+// ── ExternalCall ─────────────────────────────────────────────────────
+// Anything that left the box: GCP, GitHub, technician, third-party APIs.
+
+model ExternalCall {
+  id           String   @id @default(cuid())
+  runId        String?
+  run          Run?     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  agent        String?  // null for orchestrator-level calls
+  target       String   // 'gcp' | 'github' | 'technician' | 'stripe' | ...
+  method       String   // HTTP verb or RPC name
+  path         String   @db.Text
+  statusCode   Int?
+  costMicroUsd Int      @default(0)
+  durationMs   Int      @default(0)
+  ok           Boolean  @default(true)
+  errorMessage String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([runId])
+  @@index([target])
+  @@index([createdAt])
+  @@index([target, createdAt])
+}
+
+// ── Approval ─────────────────────────────────────────────────────────
+// Every human-in-the-loop gate. Replayable.
+
+model Approval {
+  id            String         @id @default(cuid())
+  runId         String
+  run           Run            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  kind          String         // 'plan_approval' | 'design_approval' | 'pr_approval' | 'infra_spend'
+  channel       String         // 'telegram' | 'slack' | 'board' | 'email'
+  payloadJson   Json           // what was shown to the human (plan, pegs, diff, cost estimate)
+  payloadRef    String?
+  status        ApprovalStatus @default(PENDING)
+  decidedBy     String?        // user id or telegram username
+  decision      String?        // 'approve' | 'revise' | 'cancel'
+  decisionNote  String?        @db.Text
+  requestedAt   DateTime       @default(now())
+  decidedAt     DateTime?
+
+  @@index([runId])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// ── Add to Run model (don't duplicate, merge into existing) ──────────
+// llmCalls       LlmCall[]
+// toolCalls      ToolCall[]
+// decisions      AgentDecision[]
+// externalCalls  ExternalCall[]
+// approvals      Approval[]
