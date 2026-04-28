@@ -6,6 +6,7 @@
  * or create it, then hot-register its executor for future use.
  */
 import axios from 'axios';
+import { redactSecrets } from '../tools/redact.js';
 
 export type ToolExecutor = (
   input: Record<string, unknown>,
@@ -66,11 +67,26 @@ async function requestToolFromTechnician(
   }
 }
 
-/** Register a dynamic tool from its implementation code string */
+/**
+ * Dynamic tools execute arbitrary code from the technician service via `new Function`.
+ * Refused by default: if technician is compromised it would mean RCE in the pipeline
+ * with full Node.js + filesystem + network access. Opt in only for trusted local dev
+ * by setting ALLOW_DYNAMIC_TOOLS=true.
+ */
+const ALLOW_DYNAMIC_TOOLS = process.env.ALLOW_DYNAMIC_TOOLS === 'true';
+
 function registerDynamicTool(name: string, implementation: string): void {
+  if (!ALLOW_DYNAMIC_TOOLS) {
+    registerTool(name, async () =>
+      `Dynamic tool "${name}" refused: arbitrary code execution from technician is disabled. ` +
+      `Set ALLOW_DYNAMIC_TOOLS=true only in trusted local environments.`
+    );
+    console.warn(`[tool-dispatch] refused dynamic tool "${name}" (ALLOW_DYNAMIC_TOOLS not set)`);
+    return;
+  }
+
   registerTool(name, async (input, sandboxPath) => {
     try {
-      // Dynamic tools are Node.js functions — create and execute them
       const fn = new Function('input', 'sandboxPath', 'require', implementation);
       const result = await fn(input, sandboxPath, require);
       return typeof result === 'string' ? result : JSON.stringify(result);
@@ -87,12 +103,37 @@ export function setCurrentRunId(runId: string): void {
   currentRunId = runId;
 }
 
+/**
+ * Helpers used by core tool registrations to validate LLM-supplied input.
+ * The model occasionally passes wrong types (e.g. number for `command`);
+ * fail loudly instead of silently coercing.
+ */
+export function requireString(input: Record<string, unknown>, key: string): string {
+  const v = input[key];
+  if (typeof v !== 'string') throw new Error(`Tool input "${key}" must be a string, got ${typeof v}`);
+  return v;
+}
+export function requireNumber(input: Record<string, unknown>, key: string): number {
+  const v = input[key];
+  if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`Tool input "${key}" must be a finite number, got ${typeof v}`);
+  return v;
+}
+export function optionalString(input: Record<string, unknown>, key: string): string | undefined {
+  const v = input[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string') throw new Error(`Tool input "${key}" must be a string if provided, got ${typeof v}`);
+  return v;
+}
+
 /** Execute a tool by name. If unknown, ask the technician first. */
 export async function dispatchTool(
   name: string,
   input: Record<string, unknown>,
   sandboxPath: string,
 ): Promise<string> {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return `Tool error (${name}): input must be a JSON object, got ${Array.isArray(input) ? 'array' : typeof input}`;
+  }
   let executor = registry.get(name);
 
   // If tool is unknown, ask the technician
@@ -107,9 +148,10 @@ export async function dispatchTool(
   }
 
   try {
-    return await executor(input, sandboxPath);
+    const result = await executor(input, sandboxPath);
+    return redactSecrets(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return `Tool error (${name}): ${msg}`;
+    return `Tool error (${name}): ${redactSecrets(msg)}`;
   }
 }

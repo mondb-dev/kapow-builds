@@ -162,7 +162,36 @@ AUTH_GITHUB_SECRET=...
 GITHUB_TOKEN=ghp_...       # repo creation
 VERCEL_TOKEN=...            # deploy to Vercel
 NETLIFY_TOKEN=...           # deploy to Netlify
+HELMSTACK_AGENT_URL=http://127.0.0.1:7070  # QA/Builder browser substrate (HelmStack)
 ```
+
+### HelmStack Browser Substrate for QA
+
+To run QA against a live browser substrate powered by HelmStack:
+
+1. Run HelmStack desktop so its local agent server is up on `127.0.0.1:7070`.
+2. Set `HELMSTACK_AGENT_URL=http://127.0.0.1:7070` in `.env`.
+3. Restart Kapow services.
+
+With that env var set, Kapow's `browser_navigate` and `browser_screenshot` tools route through HelmStack (used by Builder and QA) instead of launching local Puppeteer.
+
+### QA-Only Website Audits (No Dev Work)
+
+Kapow supports QA-only runs for existing websites. In your project brief, include a target URL and QA intent (responsiveness, usability, accessibility).
+
+Example brief:
+
+```text
+QA-only website audit for https://example.com
+Check responsiveness on mobile/tablet/desktop, usability of key flows, accessibility basics, and obvious performance/stability issues.
+No code changes. Read-only QA only.
+```
+
+In QA-only mode, Kapow:
+
+- skips Builder for that task
+- runs browser-based QA checks (HelmStack-backed when configured)
+- produces a downloadable CSV report artifact at `reports/<task-id>-qa-report.csv` for spreadsheet submission
 
 ### Start
 

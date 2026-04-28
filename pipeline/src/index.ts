@@ -15,7 +15,10 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
-import { runPipeline } from './orchestrator.js';
+import { runPipeline, getCommsBus } from './orchestrator.js';
+import { registerChannelsFromEnv } from './comms-config.js';
+import { CommsRouter } from './comms-router.js';
+import { createOrchestratorHooks } from './comms-hooks.js';
 import { createHttpServer } from './http.js';
 import { ensureRun, addRunLog } from 'kapow-db/runs';
 import type { PipelineResult } from 'kapow-shared';
@@ -127,6 +130,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // ── Start ────────────────────────────────────────────────────────────
 
 async function main() {
+  // Register output channels from env vars (Telegram, webhook, etc.)
+  registerChannelsFromEnv();
+  await getCommsBus().init();
+
+  // Wire inbound router (TG long-poll → conversation phase routing)
+  const router = new CommsRouter({
+    commsBus: getCommsBus(),
+    hooks: createOrchestratorHooks(),
+  });
+  await router.start();
+
   // Start HTTP server for board integration
   createHttpServer(PORT);
 

@@ -9,6 +9,16 @@ export {
   getInternalAuthHeaders,
   isInternalRequestAuthorized,
 } from './internal-auth.js';
+export { CommsBus, BoardChannel, WebhookChannel, TelegramChannel, SlackOutputChannel } from './comms/index.js';
+export type {
+  OutputChannel, TaskCreatePayload, TaskRecord,
+  TaskStatus, TaskOutput, EventSeverity,
+  WebhookChannelConfig, TelegramChannelConfig, SlackOutputChannelConfig,
+  IOChannel, InboundHandler, InboundMessage, InboundAttachment,
+  InboundChannelKind, PromptKind, PromptButton, PromptRequest,
+  PromptHandle, InboundReply,
+} from './comms/index.js';
+export { supportsInbound, supportsPrompt } from './comms/index.js';
 export { getProvider, getModels, getAI, getLocalAI, AnthropicProvider, GeminiProvider, OllamaProvider } from './ai/index.js';
 export type { AIProvider, AIMessage, AIContentBlock, AIToolDef, AIResponse, ModelMap } from './ai/index.js';
 export { embed, embedBatch, toPgVector, EMBEDDING_DIM } from './ai/embeddings.js';

@@ -145,11 +145,14 @@ export default function NewProjectPage() {
           <p className="text-xs text-gray-600 mt-0.5 mb-1">
             Describe what you want built. Be specific — Kapow will break this into tasks.
           </p>
+          <p className="text-xs text-gray-600 mb-1">
+            For QA-only website audits, include a URL and say "No code changes, read-only QA".
+          </p>
           <textarea
             value={brief}
             onChange={(e) => setBrief(e.target.value)}
             rows={8}
-            placeholder={"Built in React JS\n\nPut up a very engaging frontpage — think of ways to facilitate engagement\nAdd a blog archive and innerpages\nGenerate and include images"}
+            placeholder={"Built in React JS\n\nPut up a very engaging frontpage — think of ways to facilitate engagement\nAdd a blog archive and innerpages\nGenerate and include images\n\nOR\nQA-only website audit for https://example.com\nCheck responsiveness, usability, accessibility, and obvious performance issues.\nNo code changes, read-only QA."}
             className="w-full bg-gray-900 border border-gray-800 rounded-md px-3 py-2 text-white focus:border-blue-500 focus:outline-none resize-none font-mono text-sm"
             disabled={creating}
           />

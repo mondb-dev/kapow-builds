@@ -95,11 +95,13 @@ export async function POST(req: NextRequest, { params }: Params) {
         tasks: Array<{
           id: string;
           description: string;
+          intent?: string;
           type: string;
           acceptanceCriteria: string[];
         }>;
       }>;
-      architecture?: { overview?: string; techStack?: string };
+      intent?: string;
+      architecture?: { overview?: string; approach?: string; techStack?: string };
     };
 
     // Create cards for each task
@@ -110,7 +112,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           task.description,
           '',
           `Phase: ${phase.name}`,
-          `Type: ${task.type}`,
+          task.intent ? `Intent: ${task.intent}` : `Type: ${task.type}`,
           '',
           'Acceptance Criteria:',
           ...task.acceptanceCriteria.map((ac) => `  - ${ac}`),
@@ -146,7 +148,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             '',
             '--- Architecture ---',
             projectPlan.architecture.overview,
-            projectPlan.architecture.techStack ? `Tech: ${projectPlan.architecture.techStack}` : '',
+            (projectPlan.architecture.approach ?? projectPlan.architecture.techStack) ? `Approach: ${projectPlan.architecture.approach ?? projectPlan.architecture.techStack}` : '',
           ].filter(Boolean).join('\n'),
         },
       });

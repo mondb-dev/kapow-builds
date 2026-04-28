@@ -16,15 +16,26 @@ export async function getGlobalRecipes(): Promise<RecipeData[]> {
   return prisma.recipe.findMany({ orderBy: { category: 'asc' } });
 }
 
+export interface ScoredRecipe extends RecipeData {
+  similarity: number; // 0-1, higher = more similar
+}
+
 /** Find recipes relevant to a query using vector similarity (RAG) with keyword fallback */
 export async function findRelevantRecipes(query: string, maxResults = 5): Promise<RecipeData[]> {
+  const scored = await findRelevantRecipesWithScore(query, maxResults);
+  return scored;
+}
+
+/** Find recipes with similarity scores — used for local AI routing decisions */
+export async function findRelevantRecipesWithScore(query: string, maxResults = 5): Promise<ScoredRecipe[]> {
   try {
     const queryEmbedding = await embed(query);
     const pgVec = toPgVector(queryEmbedding);
 
-    // Cosine similarity search via pgvector
-    const results = await prisma.$queryRawUnsafe<RecipeData[]>(
-      `SELECT id, name, category, tags, content, source
+    // Cosine similarity search via pgvector (1 - distance = similarity)
+    const results = await prisma.$queryRawUnsafe<(RecipeData & { similarity: number })[]>(
+      `SELECT id, name, category, tags, content, source,
+              1 - (embedding <=> $1::vector) as similarity
        FROM "Recipe"
        WHERE embedding IS NOT NULL
        ORDER BY embedding <=> $1::vector
@@ -33,15 +44,19 @@ export async function findRelevantRecipes(query: string, maxResults = 5): Promis
       maxResults,
     );
 
-    if (results.length > 0) return results;
+    // Filter out weak matches (below 60% similarity = not relevant)
+    const filtered = results
+      .map((r) => ({ ...r, similarity: Number(r.similarity) }))
+      .filter((r) => r.similarity >= 0.6);
+    if (filtered.length > 0) return filtered;
   } catch (err) {
-    // Embedding failed — fall through to keyword search
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[recipes] Vector search failed, using keyword fallback: ${msg}`);
   }
 
-  // Keyword fallback
-  return keywordSearch(query, maxResults);
+  // Keyword fallback — assign synthetic scores
+  const kw = await keywordSearch(query, maxResults);
+  return kw.map((r, i) => ({ ...r, similarity: Math.max(0.3 - i * 0.05, 0.1) }));
 }
 
 function keywordSearch(query: string, maxResults: number): Promise<RecipeData[]> {

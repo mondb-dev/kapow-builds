@@ -53,7 +53,7 @@ export async function buildTool(request: BuildToolRequest): Promise<BuildToolRes
 
   try {
     const response = await provider.chat({
-      model: models.balanced,
+      model: models.strong,
       maxTokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [

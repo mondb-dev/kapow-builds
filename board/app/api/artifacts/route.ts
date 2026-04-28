@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { join, basename, extname, resolve } from 'path';
 import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
 
 const SANDBOX_BASE = process.env.SANDBOX_BASE ?? '/tmp/kapow';
 
@@ -30,6 +31,8 @@ const MIME_TYPES: Record<string, string> = {
 /**
  * GET /api/artifacts?runId=xxx&path=yyy
  * Serves a file from the sandbox for download.
+ * Resolves the actual sandbox directory from the RunArtifact record,
+ * since sandbox dirs use {runId}-{taskId} naming, not just {runId}.
  */
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -49,12 +52,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
   }
 
-  const fullPath = join(SANDBOX_BASE, runId, filePath);
+  // Look up the artifact record to get the actual sandboxPath
+  const artifact = await db.runArtifact.findFirst({
+    where: { runId, path: filePath },
+    select: { sandboxPath: true },
+  });
 
-  // Ensure resolved path is within sandbox
+  // Use sandboxPath from DB if available, fall back to convention
+  const sandboxDir = artifact?.sandboxPath || join(SANDBOX_BASE, runId);
+  const fullPath = join(sandboxDir, filePath);
+
+  // Ensure resolved path is within the sandbox base
   const resolved = resolve(fullPath);
-  const sandboxRoot = resolve(join(SANDBOX_BASE, runId));
+  const sandboxRoot = resolve(sandboxDir);
   if (!resolved.startsWith(sandboxRoot + '/') && resolved !== sandboxRoot) {
+    return NextResponse.json({ error: 'Path traversal blocked' }, { status: 403 });
+  }
+
+  // Also verify it's within the global sandbox base
+  const globalRoot = resolve(SANDBOX_BASE);
+  if (!resolved.startsWith(globalRoot + '/')) {
     return NextResponse.json({ error: 'Path traversal blocked' }, { status: 403 });
   }
 

@@ -7,9 +7,9 @@
 import { registerTool } from './tool-dispatch.js';
 import { shellExec } from '../tools/shell.js';
 import { fileWrite, fileRead, fileList } from '../tools/files.js';
-import { gitCommit, githubCreateRepo } from '../tools/git.js';
-import { browserNavigate, browserScreenshot } from '../tools/browser.js';
-import { vercelDeploy, netlifyDeploy } from '../tools/deploy.js';
+import { gitInit, gitCommit, gitBranch, gitPush, gitStatus, githubCreateRepo } from '../tools/git.js';
+import { browserNavigate, browserScreenshot, browserSetViewport } from '../tools/browser.js';
+import { vercelDeploy, netlifyDeploy, firebaseDeploy } from '../tools/deploy.js';
 
 export function registerCoreTools(): void {
   registerTool('shell_exec', async (input, sandboxPath) => {
@@ -38,9 +38,27 @@ export function registerCoreTools(): void {
     return JSON.stringify(fileList(sandboxPath, path));
   });
 
+  registerTool('git_init', async (_input, sandboxPath) => {
+    return await gitInit(sandboxPath);
+  });
+
   registerTool('git_commit', async (input, sandboxPath) => {
     const { message } = input as { message: string };
     return await gitCommit(sandboxPath, message);
+  });
+
+  registerTool('git_branch', async (input, sandboxPath) => {
+    const { branch_name } = input as { branch_name: string };
+    return await gitBranch(sandboxPath, branch_name);
+  });
+
+  registerTool('git_push', async (input, sandboxPath) => {
+    const { remote = 'origin', branch = 'main' } = input as { remote?: string; branch?: string };
+    return await gitPush(sandboxPath, remote, branch);
+  });
+
+  registerTool('git_status', async (_input, sandboxPath) => {
+    return await gitStatus(sandboxPath);
   });
 
   registerTool('github_create_repo', async (input, sandboxPath) => {
@@ -64,9 +82,9 @@ export function registerCoreTools(): void {
     return netlifyDeploy(sandboxPath, site_id, publish_dir);
   });
 
-  registerTool('browser_navigate', async (input) => {
+  registerTool('browser_navigate', async (input, sandboxPath) => {
     const { url } = input as { url: string };
-    return browserNavigate(url);
+    return browserNavigate(sandboxPath, url);
   });
 
   registerTool('browser_screenshot', async (input, sandboxPath) => {
@@ -74,5 +92,15 @@ export function registerCoreTools(): void {
     return browserScreenshot(sandboxPath, filename);
   });
 
-  console.log(`[builder] Registered ${10} core tool executors`);
+  registerTool('browser_set_viewport', async (input, sandboxPath) => {
+    const { width, height } = input as { width: number; height: number };
+    return browserSetViewport(sandboxPath, width, height);
+  });
+
+  registerTool('firebase_deploy', async (input, sandboxPath) => {
+    const { project_id, public_dir } = input as { project_id?: string; public_dir?: string };
+    return firebaseDeploy(sandboxPath, project_id ?? '', public_dir);
+  });
+
+  console.log(`[builder] Registered 16 core tool executors`);
 }

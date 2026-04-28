@@ -7,3 +7,4 @@ logs/
 .env.local
 *.log
 .DS_Store
+*-vertex.json

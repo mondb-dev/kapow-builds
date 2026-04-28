@@ -8,9 +8,19 @@
 
 // ── Planning ─────────────────────────────────────────────────────────
 
+export type TaskIntent =
+  | 'development'    // build software: apps, scripts, configs, infrastructure
+  | 'research'       // find, synthesize, and cite information from sources
+  | 'writing'        // produce prose: articles, reports, copy, documentation
+  | 'analysis'       // examine data/situations, produce structured findings
+  | 'audit'          // evaluate an existing artifact against criteria
+  | 'creative'       // generate artistic/design output: poems, stories, naming
+  ;
+
 export interface Task {
   id: string;
   description: string;
+  intent: TaskIntent;
   type: 'code' | 'shell' | 'browser' | 'file' | 'api';
   dependencies: string[];
   acceptanceCriteria: string[];
@@ -24,21 +34,25 @@ export interface Phase {
   dependencies: string[];
 }
 
-export interface ArchitectureDoc {
+export interface ProjectContext {
   overview: string;
-  techStack: string;
-  fileStructure: string;
+  approach: string;
+  structure: string;
   conventions: string;
   resolvedAmbiguities: string[];
   notes: string;
 }
 
+/** @deprecated Use ProjectContext instead */
+export type ArchitectureDoc = ProjectContext;
+
 export interface ProjectPlan {
   id: string;
   originalBrief: string;
+  intent: TaskIntent;
   phases: Phase[];
   constraints: string[];
-  architecture: ArchitectureDoc;
+  architecture: ProjectContext;
 }
 
 // ── Building ─────────────────────────────────────────────────────────
@@ -67,6 +81,7 @@ export interface TaskBuildRequest {
   sandboxPath?: string;
   completedTasks: string[];
   availableTools?: AvailableTool[];
+  useLocalAI?: boolean;
 }
 
 export interface TaskFixRequest {

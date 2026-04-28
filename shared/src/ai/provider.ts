@@ -9,6 +9,7 @@ import type { AIProvider, ModelMap } from './types.js';
 import { AnthropicProvider } from './anthropic.js';
 import { GeminiProvider } from './gemini.js';
 import { OllamaProvider } from './ollama.js';
+import { VertexProvider } from './vertex.js';
 
 // ── Model Maps ───────────────────────────────────────────────────────
 
@@ -24,10 +25,16 @@ const GEMINI_MODELS: ModelMap = {
   fast: 'gemini-2.5-flash',
 };
 
+const VERTEX_MODELS: ModelMap = {
+  strong: 'claude-opus-4-7',
+  balanced: 'claude-sonnet-4-6',
+  fast: 'claude-haiku-4-5@20251001',
+};
+
 const OLLAMA_MODELS: ModelMap = {
-  strong: 'qwen2.5:14b',
-  balanced: 'qwen2.5:14b',
-  fast: 'qwen2.5:7b',
+  strong: 'gemma4:26b',
+  balanced: 'gemma4:e4b',
+  fast: 'gemma4:e2b',
 };
 
 // Allow overrides via env — service-scoped keys take priority
@@ -60,6 +67,10 @@ export function getProvider(): AIProvider {
     case 'google':
       cachedProvider = new GeminiProvider();
       break;
+    case 'vertex':
+    case 'vertexai':
+      cachedProvider = new VertexProvider();
+      break;
     case 'ollama':
     case 'local':
       cachedProvider = new OllamaProvider();
@@ -84,6 +95,10 @@ export function getModels(): ModelMap {
     case 'gemini':
     case 'google':
       cachedModels = loadModelMap(GEMINI_MODELS);
+      break;
+    case 'vertex':
+    case 'vertexai':
+      cachedModels = loadModelMap(VERTEX_MODELS);
       break;
     case 'ollama':
     case 'local':

@@ -6,15 +6,17 @@
  * and the board (card management).
  */
 import axios from 'axios';
+import { mkdirSync, writeFileSync, readdirSync, lstatSync, existsSync } from 'fs';
+import { dirname, join, relative } from 'path';
 import type {
-  ProjectPlan, Phase, Task, Artifact, ArchitectureDoc,
+  ProjectPlan, Phase, Task, Artifact, ProjectContext,
   TaskBuildResult, TaskQAResult, GateResult,
-  PipelineResult, AvailableTool,
+  PipelineResult, AvailableTool, TaskIntent,
 } from 'kapow-shared';
-import { BoardClient, type CardOutput } from './board-client.js';
+import { CommsBus, BoardChannel, type TaskOutput } from 'kapow-shared';
 import {
-  getProjectRecipes, findRelevantRecipes, formatRecipesForPrompt, upsertGlobalRecipe,
-  type RecipeData,
+  getProjectRecipes, findRelevantRecipesWithScore, formatRecipesForPrompt, upsertGlobalRecipe,
+  type RecipeData, type ScoredRecipe,
 } from 'kapow-db/recipes';
 import {
   getProjectPreferences, getGlobalPreferences, formatPreferencesForPrompt,
@@ -27,9 +29,20 @@ import { buildTask, fixTask } from './agents/builder.js';
 import { runTaskQA } from './agents/qa.js';
 import { evaluate as gateEvaluate } from './agents/gate.js';
 import { assertRunActive, RunStoppedError } from './run-control.js';
+import { createSandbox, resolveSandboxPath } from './agents/sandbox.js';
+import { closeBrowsersForRun } from './tools/browser.js';
+import { maybeRequestPlanApproval } from './approval-gate.js';
 
 const TECHNICIAN_URL = process.env.TECHNICIAN_URL ?? 'http://localhost:3006';
-const board = new BoardClient();
+// ── Comms bus (replaces direct BoardClient) ──────────────────────────
+// Board is the default channel; additional channels (webhook, Slack, etc.)
+// can be registered before calling runPipeline via getCommsBus().register().
+const comms = new CommsBus();
+comms.register(new BoardChannel());
+
+export function getCommsBus(): CommsBus {
+  return comms;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -46,44 +59,154 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function buildCardOutput(artifacts: Artifact[], _task?: Task, runId?: string): CardOutput {
-  // Filter to only project files — exclude system/cache paths
-  const projectFiles = artifacts.filter((a) =>
-    a.type === 'file' &&
-    !a.path.includes('node_modules') &&
-    !a.path.includes('.git/') &&
-    !a.path.includes('Library/') &&
-    !a.path.includes('.cache') &&
-    !a.path.includes('__pycache__') &&
-    !a.path.startsWith('.')
-  );
+function isAuditTask(task: Task): boolean {
+  return task.intent === 'audit';
+}
+
+function ensureArtifact(buildResult: TaskBuildResult, artifact: Artifact): void {
+  if (!buildResult.artifacts.some((a) => a.path === artifact.path)) {
+    buildResult.artifacts.push(artifact);
+  }
+}
+
+function writeQaCsvReport(buildResult: TaskBuildResult, qaResult: TaskQAResult): void {
+  const reportPath = `reports/${qaResult.taskId}-qa-report.csv`;
+  const absPath = resolveSandboxPath(buildResult.sandboxPath, reportPath);
+  mkdirSync(dirname(absPath), { recursive: true });
+
+  const escapeCsv = (value: string): string => {
+    const clean = value.replace(/\r?\n/g, ' ').trim();
+    return `"${clean.replace(/"/g, '""')}"`;
+  };
+
+  const rows: string[] = [
+    ['task_id', 'status', 'severity', 'file', 'finding', 'delta'].map(escapeCsv).join(','),
+  ];
+
+  if (qaResult.issues.length === 0) {
+    rows.push([
+      qaResult.taskId,
+      qaResult.passed ? 'PASS' : 'FAIL',
+      'none',
+      '',
+      qaResult.passed ? 'No issues reported' : 'No explicit issues reported',
+      qaResult.delta || '',
+    ].map(escapeCsv).join(','));
+  } else {
+    for (const issue of qaResult.issues) {
+      rows.push([
+        qaResult.taskId,
+        qaResult.passed ? 'PASS' : 'FAIL',
+        issue.severity,
+        issue.file ?? '',
+        issue.description,
+        qaResult.delta || '',
+      ].map(escapeCsv).join(','));
+    }
+  }
+
+  writeFileSync(absPath, rows.join('\n') + '\n', 'utf-8');
+  ensureArtifact(buildResult, { path: reportPath, type: 'file' });
+}
+
+function buildCardOutput(artifacts: Artifact[], task?: Task, runId?: string): TaskOutput {
+  const intent = task?.intent ?? 'development';
+
+  // For dev tasks, filter out build system artifacts
+  // For non-dev tasks, only filter truly internal paths (.git, Library)
+  const isDevIntent = intent === 'development';
+  const projectFiles = artifacts.filter((a) => {
+    if (a.type !== 'file') return false;
+    // Always exclude internal system paths
+    if (a.path.includes('.git/') || a.path.includes('Library/') || a.path.startsWith('.')) return false;
+    // Only exclude dev build artifacts for development tasks
+    if (isDevIntent && (
+      a.path.includes('node_modules') ||
+      a.path.includes('.cache') ||
+      a.path.includes('__pycache__') ||
+      a.path.includes('venv/') ||
+      a.path.includes('.venv/')
+    )) return false;
+    return true;
+  });
 
   if (projectFiles.length === 0) {
     return { type: 'summary', summary: `Task completed. ${artifacts.length > 0 ? artifacts.length + ' internal files generated.' : 'No file output.'}`, runId };
   }
 
-  const hasProject = projectFiles.some((f) =>
-    f.path.includes('package.json') || f.path.includes('server') ||
-    f.path.endsWith('.html') || f.path.endsWith('.tsx') || f.path.endsWith('.jsx')
-  );
-
-  // For projects, show summary + key files
-  if (hasProject && projectFiles.length > 5) {
-    return {
-      type: 'summary',
-      summary: `Built ${projectFiles.length} files.`,
-      files: projectFiles.slice(0, 10).map((f) => ({ name: f.path.split('/').pop() ?? f.path, path: f.path })),
-      runId,
-    };
+  // For dev projects with many files, show summary
+  if (isDevIntent && projectFiles.length > 5) {
+    const hasProject = projectFiles.some((f) =>
+      f.path.includes('package.json') || f.path.includes('server') ||
+      f.path.endsWith('.html') || f.path.endsWith('.tsx') || f.path.endsWith('.jsx')
+    );
+    if (hasProject) {
+      return {
+        type: 'summary',
+        summary: `Built ${projectFiles.length} files.`,
+        files: projectFiles.slice(0, 10).map((f) => ({ name: f.path.split('/').pop() ?? f.path, path: f.path })),
+        runId,
+      };
+    }
   }
 
-  // For direct outputs, list all files
+  // For all outputs, list files
   return {
     type: 'files',
     files: projectFiles.slice(0, 10).map((f) => ({ name: f.path.split('/').pop() ?? f.path, path: f.path })),
     summary: `${projectFiles.length} file${projectFiles.length === 1 ? '' : 's'} produced.`,
     runId,
   };
+}
+
+const MAX_WALK_DEPTH = 10;
+const MAX_ARTIFACTS = 5000;
+
+function collectArtifacts(sandboxPath: string, intent?: TaskIntent): Artifact[] {
+  const artifacts: Artifact[] = [];
+  let truncated = false;
+  let depthClipped = false;
+  // Always skip .git; only skip dev build dirs for development tasks
+  const skipDirs = new Set(['.git']);
+  if (!intent || intent === 'development') {
+    skipDirs.add('node_modules');
+    skipDirs.add('dist');
+  }
+  // Always skip venv dirs regardless of intent
+  skipDirs.add('venv');
+  skipDirs.add('.venv');
+
+  function walk(dir: string, depth: number): void {
+    if (depth > MAX_WALK_DEPTH) { depthClipped = true; return; }
+    if (artifacts.length >= MAX_ARTIFACTS) { truncated = true; return; }
+    if (!existsSync(dir)) return;
+
+    for (const entry of readdirSync(dir)) {
+      if (artifacts.length >= MAX_ARTIFACTS) { truncated = true; return; }
+      if (skipDirs.has(entry)) continue;
+
+      const full = join(dir, entry);
+      const rel = relative(sandboxPath, full);
+      const stat = lstatSync(full);
+      if (stat.isSymbolicLink()) continue;
+
+      if (stat.isDirectory()) {
+        artifacts.push({ path: rel, type: 'directory' });
+        walk(full, depth + 1);
+      } else {
+        artifacts.push({ path: rel, type: 'file' });
+      }
+    }
+  }
+
+  walk(sandboxPath, 0);
+  if (truncated) {
+    console.warn(`[orchestrator] Artifact list truncated at ${MAX_ARTIFACTS} entries for sandbox ${sandboxPath}`);
+  }
+  if (depthClipped) {
+    console.warn(`[orchestrator] Artifact walk hit depth limit ${MAX_WALK_DEPTH} for sandbox ${sandboxPath}`);
+  }
+  return artifacts;
 }
 
 // ── Pipeline ─────────────────────────────────────────────────────────
@@ -97,27 +220,41 @@ export async function runPipeline(
   try {
 
   // ── Step 0: Load recipes, preferences, tools ────────────────────
-  const recipes = projectId
-    ? await getProjectRecipes(projectId)
-    : await findRelevantRecipes(plan);
+  const scoredRecipes: ScoredRecipe[] = projectId
+    ? (await getProjectRecipes(projectId)).map((r) => ({ ...r, similarity: 0.5 }))
+    : await findRelevantRecipesWithScore(plan);
+  const recipes = scoredRecipes as RecipeData[];
+  const topSimilarity = scoredRecipes.length > 0 ? scoredRecipes[0].similarity : 0;
+  const useLocalAI = topSimilarity >= 0.85;
   const preferences = projectId
     ? await getProjectPreferences(projectId)
     : await getGlobalPreferences();
   const recipesText = formatRecipesForPrompt(recipes);
   const preferencesText = formatPreferencesForPrompt(preferences);
-  if (recipes.length > 0) onProgress(`[${runId}] Loaded ${recipes.length} recipes.`);
+  if (scoredRecipes.length > 0) {
+    for (const sr of scoredRecipes.slice(0, 3)) {
+      onProgress(`[${runId}] 📖 Recipe: "${sr.name.split('\n')[0].slice(0, 60)}" (${(sr.similarity * 100).toFixed(0)}% match)`);
+    }
+    if (useLocalAI) {
+      onProgress(`[${runId}] 🔄 Recipe match ≥85% — switching to local LLM (Ollama).`);
+    } else {
+      onProgress(`[${runId}] 🌐 Recipe match <85% — using cloud AI.`);
+    }
+  } else {
+    onProgress(`[${runId}] 🆕 No matching recipes — building from scratch with cloud AI.`);
+  }
   if (Object.keys(preferences).length > 0) onProgress(`[${runId}] Loaded preferences.`);
 
   const readyTools = await fetchReadyTools();
   if (readyTools.length > 0) {
-    onProgress(`[${runId}] ${readyTools.length} shared tools available from technician.`);
+    onProgress(`[${runId}] ${readyTools.length} tools available from technician.`);
   }
 
   updateRunStatus(runId, 'planning').catch(() => {});
 
   // ── Step 1+2: Reuse existing cards OR plan + create new ones ──
   const cardIds = new Map<string, string>();
-  const existingCards = await board.listCards(runId);
+  const existingCards = await comms.listTasks(runId);
   const plannedCards = existingCards.filter((c) => c.taskId);
   let projectPlan: ProjectPlan;
 
@@ -127,7 +264,7 @@ export async function runPipeline(
 
     // Check if Run has stored planner output
     const runRecord = await getRun(runId);
-    const storedPlan = runRecord?.planData as { phases?: Phase[]; constraints?: string[]; architecture?: ArchitectureDoc } | null;
+    const storedPlan = runRecord?.planData as { intent?: TaskIntent; phases?: Phase[]; constraints?: string[]; architecture?: ProjectContext } | null;
 
     if (storedPlan?.phases?.length) {
       // Full planner output available — use it directly
@@ -135,12 +272,13 @@ export async function runPipeline(
       projectPlan = {
         id: runId,
         originalBrief: plan,
+        intent: storedPlan.intent ?? 'development',
         phases: storedPlan.phases,
         constraints: storedPlan.constraints ?? [],
         architecture: storedPlan.architecture ?? {
           overview: plan,
-          techStack: 'Determined by task requirements',
-          fileStructure: 'As specified in tasks',
+          approach: 'Determined by task requirements',
+          structure: 'As specified in tasks',
           conventions: 'Follow standard conventions for the chosen stack',
           resolvedAmbiguities: [],
           notes: '',
@@ -181,6 +319,7 @@ export async function runPipeline(
       phase.tasks.push({
         id: card.taskId!,
         description: desc,
+        intent: 'development',
         type: 'code',
         dependencies: [],
         acceptanceCriteria: acLines,
@@ -191,18 +330,18 @@ export async function runPipeline(
     projectPlan = {
       id: runId,
       originalBrief: plan,
+      intent: 'development',
       phases: Array.from(phaseMap.values()).map((p) => ({
         ...p,
         description: p.name,
         dependencies: [],
       })),
       constraints: [],
-      // Generate a minimal architecture doc from the brief
       architecture: {
         overview: plan,
-        techStack: 'Determined by task requirements',
-        fileStructure: 'As specified in tasks',
-        conventions: 'Follow standard conventions for the chosen stack',
+        approach: 'Determined by task requirements',
+        structure: 'As specified in tasks',
+        conventions: 'Follow standard conventions',
         resolvedAmbiguities: [],
         notes: '',
       },
@@ -222,10 +361,10 @@ export async function runPipeline(
       return { success: false, diagnosis: `Planner failed: ${msg}` };
     }
 
-    // Create board cards
+    // Create tasks via comms bus (board + all registered channels)
     for (const phase of projectPlan.phases) {
       for (const task of phase.tasks) {
-        const card = await board.createCard({
+        const record = await comms.createTask({
           title: `[${phase.name}] ${task.description.slice(0, 150)}`,
           description: task.description,
           status: 'BACKLOG',
@@ -234,10 +373,18 @@ export async function runPipeline(
           taskId: task.id,
           projectId,
         });
-        cardIds.set(task.id, card.id);
+        cardIds.set(task.id, record.id);
       }
     }
-    onProgress(`[${runId}] Board cards created.`);
+    onProgress(`[${runId}] Tasks created (${comms.channelCount} channel${comms.channelCount === 1 ? '' : 's'}).`);
+  }
+
+  // ── Plan approval gate (no-op for board-initiated runs) ─────────
+  const approval = await maybeRequestPlanApproval({ runId, plan: projectPlan });
+  if (!approval.approved) {
+    onProgress(`[${runId}] Plan not approved: ${approval.reason}`);
+    updateRunStatus(runId, 'failed', { diagnosis: approval.reason }).catch(() => {});
+    return { success: false, diagnosis: approval.reason };
   }
 
   // ── Step 3: Execute phases ──────────────────────────────────────
@@ -251,49 +398,71 @@ export async function runPipeline(
     assertRunActive(runId);
     onProgress(`[${runId}] Starting phase: ${phase.name}`);
 
-    for (const task of topologicalSortTasks(phase.tasks)) {
+    for (const task of topologicalSortTasks(phase.tasks, new Set(completedTasks))) {
       assertRunActive(runId);
       const cardId = cardIds.get(task.id) ?? '';
 
       // ── Build (direct call) ───────────────────────────────
-      await board.updateCardStatus(cardId, 'IN_PROGRESS');
-      await board.addCardEvent(cardId, { message: 'Builder started', type: 'PROGRESS' });
+      await comms.updateStatus(task.id, cardId, 'IN_PROGRESS');
+      await comms.addEvent(task.id, cardId, 'Builder started', 'PROGRESS');
       onProgress(`[${runId}] Building task ${task.id}...`);
       updateRunStatus(runId, 'building').catch(() => {});
       addRunLog(runId, 'pipeline', `Building task ${task.id}`, 'info').catch(() => {});
 
       let buildResult: TaskBuildResult;
-      try {
-        buildResult = await buildTask({
-          runId, task, phase,
-          architecture: projectPlan.architecture,
-          constraints: projectPlan.constraints,
-          sandboxPath,
-          completedTasks,
-          availableTools: readyTools,
-        });
-        sandboxPath = buildResult.sandboxPath;
-        allBuildLogs.push(...buildResult.logs);
-        onProgress(`[${runId}] Task ${task.id} built. ${buildResult.artifacts.length} artifacts.`);
-      } catch (err) {
-        onProgress(`[${runId}] Builder failed on task ${task.id}: ${errMsg(err)}`);
-        await board.updateCard(cardId, { status: 'FAILED', output: { type: 'summary', summary: `Build failed: ${errMsg(err)}` } });
-        await board.addCardEvent(cardId, { message: `Build error: ${errMsg(err)}`, type: 'ERROR' });
-        failedTasks.push(task.id);
-        continue;
+      const auditTask = isAuditTask(task);
+
+      if (auditTask) {
+        const qaSandbox = sandboxPath ?? createSandbox(`${runId}-${task.id}`);
+        sandboxPath = qaSandbox;
+        buildResult = {
+          runId,
+          taskId: task.id,
+          sandboxPath: qaSandbox,
+          artifacts: [],
+          logs: ['Audit task — builder skipped, running QA directly.'],
+          success: true,
+        };
+        onProgress(`[${runId}] Audit task ${task.id}: skipping builder, running QA directly.`);
+        await comms.addEvent(task.id, cardId, 'Audit mode: build step skipped.', 'INFO');
+      } else {
+        try {
+          buildResult = await buildTask({
+            runId, task, phase,
+            architecture: projectPlan.architecture,
+            constraints: projectPlan.constraints,
+            sandboxPath,
+            completedTasks,
+            availableTools: readyTools,
+            useLocalAI,
+          });
+          sandboxPath = buildResult.sandboxPath;
+          allBuildLogs.push(...buildResult.logs);
+          // Log tools used during build
+          const toolsUsed = [...new Set(buildResult.logs.filter((l) => l.startsWith('Tool: ')).map((l) => l.match(/^Tool: (\w+)/)?.[1]).filter(Boolean))];
+          const aiSource = buildResult.logs.find((l) => l.includes('Switching to local AI')) ? 'local' : 'cloud';
+          onProgress(`[${runId}] Task ${task.id} built (${aiSource} AI). ${buildResult.artifacts.length} artifacts. Tools: ${toolsUsed.length > 0 ? toolsUsed.join(', ') : 'none'}`);
+        } catch (err) {
+          onProgress(`[${runId}] Builder failed on task ${task.id}: ${errMsg(err)}`);
+          await comms.updateStatus(task.id, cardId, 'FAILED', { type: 'summary', summary: `Build failed: ${errMsg(err)}` });
+          await comms.addEvent(task.id, cardId, `Build error: ${errMsg(err)}`, 'ERROR');
+          failedTasks.push(task.id);
+          continue;
+        }
       }
 
-      // ── Skip QA for simple file/content tasks ─────────────
-      const isSimpleTask = task.type === 'file' || task.type === 'shell';
+      // ── Skip QA for simple dev file/shell tasks ─────────────
+      const taskIntent = task.intent ?? 'development';
+      const isSimpleDevTask = taskIntent === 'development' && (task.type === 'file' || task.type === 'shell');
 
-      if (isSimpleTask && buildResult.success) {
-        // For file/shell tasks, verify output exists and skip QA
+      if (isSimpleDevTask && buildResult.success) {
+        // For simple dev file/shell tasks, verify output exists and skip QA
         const output = buildCardOutput(buildResult.artifacts, task, runId);
         const hasOutput = output.files && output.files.length > 0;
         if (hasOutput) {
           onProgress(`[${runId}] Simple task ${task.id} — skipping QA.`);
-          await board.updateCard(cardId, { status: 'DONE', output });
-          await board.addCardEvent(cardId, { message: output.summary ?? 'Task completed', type: 'SUCCESS' });
+          await comms.updateStatus(task.id, cardId, 'DONE', output);
+          await comms.addEvent(task.id, cardId, output.summary ?? 'Task completed', 'SUCCESS');
           completedTasks.push(task.id);
           allArtifacts.push(...buildResult.artifacts);
           for (const artifact of buildResult.artifacts) {
@@ -315,8 +484,8 @@ export async function runPipeline(
 
         // QA
         assertRunActive(runId);
-        await board.updateCardStatus(cardId, 'QA');
-        await board.addCardEvent(cardId, { message: `QA check (iteration ${iteration})`, type: 'PROGRESS' });
+        await comms.updateStatus(task.id, cardId, 'QA');
+        await comms.addEvent(task.id, cardId, `QA check (iteration ${iteration})`, 'PROGRESS');
         onProgress(`[${runId}] QA checking task ${task.id} (iteration ${iteration})...`);
         updateRunStatus(runId, 'qa').catch(() => {});
 
@@ -330,10 +499,15 @@ export async function runPipeline(
             availableTools: readyTools,
           });
           onProgress(`[${runId}] QA task ${task.id}: passed=${qaResult.passed}, issues=${qaResult.issues.length}`);
+          writeQaCsvReport(buildResult, qaResult);
+          const refreshed = collectArtifacts(buildResult.sandboxPath, taskIntent);
+          for (const artifact of refreshed) {
+            ensureArtifact(buildResult, artifact);
+          }
           previousQAResults.push(qaResult);
         } catch (err) {
           onProgress(`[${runId}] QA failed on task ${task.id}: ${errMsg(err)}`);
-          await board.addCardEvent(cardId, { message: `QA error: ${errMsg(err)}`, type: 'ERROR' });
+          await comms.addEvent(task.id, cardId, `QA error: ${errMsg(err)}`, 'ERROR');
           break;
         }
 
@@ -344,58 +518,64 @@ export async function runPipeline(
           onProgress(`[${runId}] Gate task ${task.id}: ${gateResult.ciSignal}`);
         } catch (err) {
           onProgress(`[${runId}] Gate failed on task ${task.id}: ${errMsg(err)}`);
-          await board.addCardEvent(cardId, { message: `Gate error: ${errMsg(err)}`, type: 'ERROR' });
+          await comms.addEvent(task.id, cardId, `Gate error: ${errMsg(err)}`, 'ERROR');
           break;
         }
 
         if (gateResult.ciSignal === 'go') {
           taskPassed = true;
           const output = buildCardOutput(buildResult.artifacts, task, runId);
-          await board.updateCard(cardId, { status: 'DONE', output });
-          await board.addCardEvent(cardId, { message: output.summary ?? 'Task passed', type: 'SUCCESS' });
+          await comms.updateStatus(task.id, cardId, 'DONE', output);
+          await comms.addEvent(task.id, cardId, output.summary ?? 'Task passed', 'SUCCESS');
           break;
         }
 
         if (gateResult.ciSignal === 'escalate') {
           const output = buildCardOutput(buildResult.artifacts, task, runId);
           output.summary = `Escalated after ${iteration} iterations: ${gateResult.diagnosis?.slice(0, 300) ?? 'max retries'}`;
-          await board.updateCard(cardId, { status: 'FAILED', output });
-          await board.addCardEvent(cardId, {
-            message: `Escalated: ${gateResult.diagnosis?.slice(0, 500) ?? 'max iterations'}`,
-            type: 'ERROR',
-          });
+          await comms.updateStatus(task.id, cardId, 'FAILED', output);
+          await comms.addEvent(task.id, cardId, `Escalated: ${gateResult.diagnosis?.slice(0, 500) ?? 'max iterations'}`, 'ERROR');
           failedTasks.push(task.id);
           break;
         }
 
         // no-go → fix
         assertRunActive(runId);
-        await board.updateCardStatus(cardId, 'IN_PROGRESS');
-        await board.addCardEvent(cardId, {
-          message: `Fix needed (iteration ${iteration}): ${gateResult.delta?.slice(0, 300) ?? ''}`,
-          type: 'PROGRESS',
-        });
+        await comms.updateStatus(task.id, cardId, 'IN_PROGRESS');
+        await comms.addEvent(task.id, cardId, `Fix needed (iteration ${iteration}): ${gateResult.delta?.slice(0, 300) ?? ''}`, 'PROGRESS');
         onProgress(`[${runId}] Fixing task ${task.id} (iteration ${iteration})...`);
 
-        try {
-          buildResult = await fixTask({
-            runId, task, phase,
-            architecture: projectPlan.architecture,
-            constraints: projectPlan.constraints,
-            previousBuildResult: buildResult,
-            delta: gateResult.delta ?? '',
-            qaIssues: qaResult.issues,
-            iteration,
-          });
-          onProgress(`[${runId}] Task ${task.id} fix complete.`);
-        } catch (err) {
-          onProgress(`[${runId}] Fix failed on task ${task.id}: ${errMsg(err)}`);
+        if (auditTask) {
+          // Audit tasks evaluate external artifacts — there is no build to "fix".
+          // Re-running QA with the same inputs would just burn tokens for the
+          // same verdict, so escalate on first no-go.
           const output = buildCardOutput(buildResult.artifacts, task, runId);
-          output.summary = `Fix failed: ${errMsg(err)}`;
-          await board.updateCard(cardId, { status: 'FAILED', output });
-          await board.addCardEvent(cardId, { message: `Fix error: ${errMsg(err)}`, type: 'ERROR' });
+          output.summary = `Audit task did not pass: ${gateResult.diagnosis?.slice(0, 300) ?? 'criteria not met'}`;
+          await comms.updateStatus(task.id, cardId, 'FAILED', output);
+          await comms.addEvent(task.id, cardId, `Audit failed (no retry): ${gateResult.diagnosis?.slice(0, 500) ?? 'criteria not met'}`, 'ERROR');
           failedTasks.push(task.id);
           break;
+        } else {
+          try {
+            buildResult = await fixTask({
+              runId, task, phase,
+              architecture: projectPlan.architecture,
+              constraints: projectPlan.constraints,
+              previousBuildResult: buildResult,
+              delta: gateResult.delta ?? '',
+              qaIssues: qaResult.issues,
+              iteration,
+            });
+            onProgress(`[${runId}] Task ${task.id} fix complete.`);
+          } catch (err) {
+            onProgress(`[${runId}] Fix failed on task ${task.id}: ${errMsg(err)}`);
+            const output = buildCardOutput(buildResult.artifacts, task, runId);
+            output.summary = `Fix failed: ${errMsg(err)}`;
+            await comms.updateStatus(task.id, cardId, 'FAILED', output);
+            await comms.addEvent(task.id, cardId, `Fix error: ${errMsg(err)}`, 'ERROR');
+            failedTasks.push(task.id);
+            break;
+          }
         }
       }
 
@@ -409,8 +589,8 @@ export async function runPipeline(
       } else if (!failedTasks.includes(task.id)) {
         const output = buildCardOutput(buildResult.artifacts, task, runId);
         output.summary = `Failed after ${maxIterations} QA iterations.`;
-        await board.updateCard(cardId, { status: 'FAILED', output });
-        await board.addCardEvent(cardId, { message: 'Max iterations reached', type: 'ERROR' });
+        await comms.updateStatus(task.id, cardId, 'FAILED', output);
+        await comms.addEvent(task.id, cardId, 'Max iterations reached', 'ERROR');
         failedTasks.push(task.id);
       }
     }
@@ -426,24 +606,37 @@ export async function runPipeline(
       for (const recipe of newRecipes) {
         await upsertGlobalRecipe(recipe);
       }
-      if (newRecipes.length > 0) {
-        onProgress(`[${runId}] Saved ${newRecipes.length} recipe(s) from successful run.`);
+      for (const recipe of newRecipes) {
+        onProgress(`[${runId}] 📝 Saved recipe: "${recipe.name.split('\n')[0].slice(0, 60)}" [${recipe.category}]`);
       }
     } catch (err) {
       onProgress(`[${runId}] Recipe save failed (non-fatal): ${errMsg(err)}`);
     }
 
+    const deployUrl = allBuildLogs
+      .map((l) => l.match(/Result:\s*(Deployed to [^:]+:\s*(https:\/\/\S+))/i))
+      .filter(Boolean)
+      .map((m) => m![2])
+      .pop();
+
+    const completionMsg = deployUrl
+      ? `All ${completedTasks.length} tasks passed. Live at: ${deployUrl}`
+      : `All ${completedTasks.length} tasks passed.`;
+
+    await comms.pipelineComplete(runId, true, completionMsg);
     return { success: true, artifacts: allArtifacts, projectPlan };
   }
 
-  onProgress(`[${runId}] Pipeline finished with ${failedTasks.length} failed tasks: ${failedTasks.join(', ')}`);
+  const failSummary = `${failedTasks.length} tasks failed: ${failedTasks.join(', ')}`;
+  onProgress(`[${runId}] Pipeline finished with ${failSummary}`);
   updateRunStatus(runId, 'failed', { completedTasks, failedTasks }).catch(() => {});
+  await comms.pipelineComplete(runId, false, failSummary);
   return {
     success: false,
     artifacts: allArtifacts,
     failedTasks,
     projectPlan,
-    diagnosis: `${failedTasks.length} tasks failed: ${failedTasks.join(', ')}`,
+    diagnosis: failSummary,
   };
 
   } catch (err) {
@@ -453,6 +646,9 @@ export async function runPipeline(
       return { success: false, diagnosis: `Stopped: ${err.message}` };
     }
     throw err;
+  } finally {
+    // Drop any per-run browser contexts so cookies/storage don't leak across runs.
+    await closeBrowsersForRun(runId).catch(() => {});
   }
 }
 
@@ -469,14 +665,16 @@ function extractRecipes(
   const arch = projectPlan.architecture;
   const brief = projectPlan.originalBrief?.toLowerCase() ?? '';
 
-  // Categorize the project
-  let category = 'general';
-  const text = `${brief} ${arch?.overview ?? ''} ${arch?.techStack ?? ''}`.toLowerCase();
-  if (text.includes('website') || text.includes('landing') || text.includes('html') || text.includes('next') || text.includes('react')) category = 'web';
-  else if (text.includes('api') || text.includes('server') || text.includes('backend') || text.includes('express')) category = 'api';
-  else if (text.includes('cli') || text.includes('command') || text.includes('script')) category = 'cli';
-  else if (text.includes('mobile') || text.includes('app')) category = 'mobile';
-  else if (text.includes('poem') || text.includes('story') || text.includes('document') || text.includes('write')) category = 'content';
+  // Categorize the project — use intent if available, fall back to text heuristics
+  let category: string = projectPlan.intent ?? 'general';
+  if (category === 'general' || category === 'development') {
+    const text = `${brief} ${arch?.overview ?? ''} ${arch?.approach ?? ''}`.toLowerCase();
+    if (text.includes('website') || text.includes('landing') || text.includes('html') || text.includes('next') || text.includes('react')) category = 'web';
+    else if (text.includes('api') || text.includes('server') || text.includes('backend') || text.includes('express')) category = 'api';
+    else if (text.includes('cli') || text.includes('command') || text.includes('script')) category = 'cli';
+    else if (text.includes('mobile') || text.includes('app')) category = 'mobile';
+    else if (category === 'general') category = 'development';
+  }
 
   // Extract actual shell commands from build logs
   const shellCommands = (buildLogs ?? [])
@@ -502,9 +700,9 @@ function extractRecipes(
     `Brief: ${projectPlan.originalBrief?.slice(0, 300) ?? 'unknown'}`,
   ];
 
-  // Include tech stack if known
-  if (arch?.techStack && arch.techStack !== 'Determined by task requirements') {
-    contentParts.push(`Tech Stack: ${arch.techStack}`);
+  // Include approach/methodology if known
+  if (arch?.approach && arch.approach !== 'Determined by task requirements') {
+    contentParts.push(`Approach: ${arch.approach}`);
   }
 
   // Include actual setup commands (the real value)
@@ -529,7 +727,7 @@ function extractRecipes(
   const taskDescs = projectPlan.phases
     .flatMap((p) => p.tasks)
     .filter((t) => completedTasks.includes(t.id))
-    .map((t) => `- [${t.type}] ${t.description.slice(0, 120)}`)
+    .map((t) => `- [${t.intent ?? t.type}] ${t.description.slice(0, 120)}`)
     .join('\n');
   if (taskDescs) {
     contentParts.push('', 'Tasks completed:', taskDescs);
@@ -551,28 +749,38 @@ function topologicalSort(phases: Phase[]): Phase[] {
   const map = new Map(phases.map((p) => [p.id, p]));
   const visited = new Set<string>();
   const result: Phase[] = [];
-  function visit(id: string) {
+  function visit(id: string, fromId?: string) {
     if (visited.has(id)) return;
-    visited.add(id);
     const p = map.get(id);
-    if (!p) return;
-    for (const dep of p.dependencies) visit(dep);
+    if (!p) {
+      throw new Error(
+        `Phase "${fromId ?? '?'}" depends on missing phase "${id}". ` +
+        `Known phases: ${[...map.keys()].join(', ')}`
+      );
+    }
+    visited.add(id);
+    for (const dep of p.dependencies ?? []) visit(dep, id);
     result.push(p);
   }
   for (const p of phases) visit(p.id);
   return result;
 }
 
-function topologicalSortTasks(tasks: Task[]): Task[] {
+function topologicalSortTasks(tasks: Task[], completedTaskIds?: Set<string>): Task[] {
   const map = new Map(tasks.map((t) => [t.id, t]));
   const visited = new Set<string>();
   const result: Task[] = [];
-  function visit(id: string) {
+  function visit(id: string, fromId?: string) {
     if (visited.has(id)) return;
-    visited.add(id);
     const t = map.get(id);
-    if (!t) return;
-    for (const dep of t.dependencies) visit(dep);
+    if (!t) {
+      // Cross-phase dependency — already completed or unknown; skip silently
+      if (completedTaskIds?.has(id)) return;
+      console.warn(`[orchestrator] Task "${fromId ?? '?'}" references unknown task "${id}" — skipping dependency`);
+      return;
+    }
+    visited.add(id);
+    for (const dep of t.dependencies ?? []) visit(dep, id);
     result.push(t);
   }
   for (const t of tasks) visit(t.id);

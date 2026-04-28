@@ -1,4 +1,6 @@
 import { shellExec } from './shell.js';
+import { writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 function shellQuote(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
@@ -61,4 +63,53 @@ export async function netlifyDeploy(
   // Parse the live URL from Netlify CLI output
   const match = result.stdout.match(/Website URL:\s+(https:\/\/[^\s]+)/);
   return match ? `Deployed to Netlify: ${match[1]}` : result.stdout.slice(0, 500);
+}
+
+export async function firebaseDeploy(
+  sandboxPath: string,
+  projectId: string,
+  publicDir: string = 'dist',
+): Promise<string> {
+  const serviceAccount = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  const gcpProject = projectId || process.env.GOOGLE_CLOUD_PROJECT;
+  if (!gcpProject) throw new Error('GOOGLE_CLOUD_PROJECT is required for Firebase deploy');
+
+  // Write a minimal firebase.json if one doesn't exist
+  const firebaseJson = join(sandboxPath, 'firebase.json');
+  if (!existsSync(firebaseJson)) {
+    writeFileSync(firebaseJson, JSON.stringify({
+      hosting: {
+        public: publicDir,
+        ignore: ['firebase.json', '**/.*', '**/node_modules/**'],
+        rewrites: [{ source: '**', destination: '/index.html' }],
+      },
+    }, null, 2));
+  }
+
+  // Write .firebaserc if not present
+  const firebaserc = join(sandboxPath, '.firebaserc');
+  if (!existsSync(firebaserc)) {
+    writeFileSync(firebaserc, JSON.stringify({ projects: { default: gcpProject } }, null, 2));
+  }
+
+  const extraEnv: Record<string, string> = {};
+  if (serviceAccount) extraEnv.GOOGLE_APPLICATION_CREDENTIALS = serviceAccount;
+
+  // Install firebase-tools locally if needed
+  await shellExec('npm install --save-dev firebase-tools', sandboxPath, 60_000, extraEnv);
+
+  const result = await shellExec(
+    `npx firebase deploy --only hosting --project ${gcpProject} --non-interactive`,
+    sandboxPath,
+    180_000,
+    extraEnv,
+  );
+
+  if (result.exitCode !== 0) {
+    throw new Error(`Firebase deploy failed:\n${result.stderr || result.stdout}`);
+  }
+
+  const match = result.stdout.match(/Hosting URL:\s+(https:\/\/[^\s]+)/);
+  const url = match?.[1] ?? `https://${gcpProject}.web.app`;
+  return `Deployed to Firebase Hosting: ${url}`;
 }
