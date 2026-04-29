@@ -32,6 +32,7 @@ import { assertRunActive, RunStoppedError } from './run-control.js';
 import { createSandbox, resolveSandboxPath } from './agents/sandbox.js';
 import { closeBrowsersForRun } from './tools/browser.js';
 import { maybeRequestPlanApproval, maybeRequestSprintReview, type SprintTaskResult } from './approval-gate.js';
+import { runRetrospective, type SprintSummary } from './agents/retrospective.js';
 
 const TECHNICIAN_URL = process.env.TECHNICIAN_URL ?? 'http://localhost:3006';
 // ── Comms bus (replaces direct BoardClient) ──────────────────────────
@@ -396,6 +397,7 @@ export async function runPipeline(
   const allBuildLogs: string[] = [];
   const isAgileMode = preferencesText.includes('Methodology: agile');
   const sortedPhases = topologicalSort(projectPlan.phases);
+  const allSprintSummaries: SprintSummary[] = [];
 
   for (let phaseIndex = 0; phaseIndex < sortedPhases.length; phaseIndex++) {
     const phase = sortedPhases[phaseIndex];
@@ -440,6 +442,9 @@ export async function runPipeline(
             completedTasks,
             availableTools: readyTools,
             useLocalAI,
+            isAgile: isAgileMode,
+            sprintIndex: phaseIndex,
+            totalSprints: sortedPhases.length,
           });
           sandboxPath = buildResult.sandboxPath;
           allBuildLogs.push(...buildResult.logs);
@@ -503,6 +508,7 @@ export async function runPipeline(
             buildResult,
             previousQAResults: previousQAResults.length > 0 ? previousQAResults : undefined,
             availableTools: readyTools,
+            isAgile: isAgileMode,
           });
           onProgress(`[${runId}] QA task ${task.id}: passed=${qaResult.passed}, issues=${qaResult.issues.length}`);
           writeQaCsvReport(buildResult, qaResult);
@@ -610,6 +616,11 @@ export async function runPipeline(
       });
     }
 
+    // ── Collect sprint summary for retrospective ────────────────
+    if (isAgileMode) {
+      allSprintSummaries.push({ sprintIndex: phaseIndex, phase, taskResults: sprintTaskResults });
+    }
+
     // ── Agile: sprint review gate between phases ────────────────
     const isLastPhase = phaseIndex === sortedPhases.length - 1;
     if (isAgileMode && !isLastPhase) {
@@ -628,6 +639,27 @@ export async function runPipeline(
         return { success: false, diagnosis: sprintOutcome.reason };
       }
       onProgress(`[${runId}] Sprint ${phaseIndex + 1} approved. Starting Sprint ${phaseIndex + 2}...`);
+    }
+  }
+
+  // ── Agile retrospective ─────────────────────────────────────────
+  if (isAgileMode && sandboxPath && allSprintSummaries.length > 0) {
+    try {
+      onProgress(`[${runId}] Running sprint retrospective...`);
+      const retro = await runRetrospective(runId, plan, allSprintSummaries, sandboxPath);
+      onProgress(`[${runId}] Retrospective written to retrospective.md`);
+      // Save as a global recipe so future agile runs benefit
+      await upsertGlobalRecipe({
+        id: `retro-${runId}`,
+        name: retro.recipeName,
+        category: 'process',
+        content: retro.recipeContent,
+        tags: ['agile', 'retrospective'],
+        source: `run:${runId}`,
+      });
+      onProgress(`[${runId}] 📝 Retrospective saved as recipe: "${retro.recipeName.slice(0, 60)}"`);
+    } catch (err) {
+      onProgress(`[${runId}] Retrospective failed (non-fatal): ${errMsg(err)}`);
     }
   }
 

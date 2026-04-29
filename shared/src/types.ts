@@ -82,6 +82,9 @@ export interface TaskBuildRequest {
   completedTasks: string[];
   availableTools?: AvailableTool[];
   useLocalAI?: boolean;
+  isAgile?: boolean;
+  sprintIndex?: number;
+  totalSprints?: number;
 }
 
 export interface TaskFixRequest {
@@ -117,6 +120,7 @@ export interface TaskQARequest {
   runId: string;
   task: Task;
   phase: Phase;
+  isAgile?: boolean;
   architecture: ArchitectureDoc;
   buildResult: TaskBuildResult;
   previousQAResults?: TaskQAResult[];

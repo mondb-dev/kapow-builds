@@ -461,6 +461,7 @@ async function thinkingTurn(
   logs: string[],
   p: AIProvider,
   m: string,
+  sprintContext?: { goal: string; sprintIndex: number; totalSprints: number },
 ): Promise<string> {
   const thinkingPrompt = THINKING_PROMPTS[intent] ?? THINKING_PROMPTS.development;
 
@@ -471,10 +472,18 @@ async function thinkingTurn(
     architecture.conventions ? `Conventions: ${architecture.conventions}` : '',
   ].filter(Boolean).join('\n');
 
-  const system = `You are a meticulous ${intent} expert planning your next task.
-${archSummary ? `\nProject context:\n${archSummary}` : ''}`;
+  const sprintNote = sprintContext
+    ? `\nSPRINT CONTEXT: You are building Sprint ${sprintContext.sprintIndex + 1} of ${sprintContext.totalSprints}.\nSprint goal: ${sprintContext.goal}\nThis sprint must produce a working, demonstrable increment. Every task you complete must bring the sprint goal closer to being demoable end-to-end.`
+    : '';
 
-  const prompt = `Task: ${taskDescription}\n\n${thinkingPrompt}`;
+  const system = `You are a meticulous ${intent} expert planning your next task.
+${archSummary ? `\nProject context:\n${archSummary}` : ''}${sprintNote}`;
+
+  const sprintCheck = sprintContext
+    ? `\n10. SPRINT INCREMENT: After this task, can a user demo the sprint goal end-to-end: "${sprintContext.goal}"? What gap remains, and is it covered by other tasks in this sprint?`
+    : '';
+
+  const prompt = `Task: ${taskDescription}\n\n${thinkingPrompt}${sprintCheck}`;
 
   try {
     const response = await p.chat({
@@ -715,6 +724,10 @@ export async function buildTask(req: TaskBuildRequest): Promise<TaskBuildResult>
   // ── Thinking turn: reason before acting ─────────────────────────
   const p = aiProvider ?? provider;
   const m = aiModel ?? models.strong;
+  const sprintContext = req.isAgile && req.sprintIndex !== undefined && req.totalSprints !== undefined
+    ? { goal: req.phase.description ?? req.phase.name, sprintIndex: req.sprintIndex, totalSprints: req.totalSprints }
+    : undefined;
+
   const thinking = await thinkingTurn(
     taskIntent,
     req.task.description,
@@ -723,6 +736,7 @@ export async function buildTask(req: TaskBuildRequest): Promise<TaskBuildResult>
     logs,
     p,
     m,
+    sprintContext,
   );
 
   const userContent = [

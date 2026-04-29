@@ -232,6 +232,14 @@ export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
       '=== END PREVIOUS QA ===',
       '',
     ] : []),
+    ...(req.isAgile ? [
+      '=== SPRINT GOAL CHECK ===',
+      `Sprint goal: ${phase.description ?? phase.name}`,
+      'Beyond task-level criteria: does this task\'s output contribute to the sprint goal being demoable end-to-end?',
+      'If something would prevent a working demo of the sprint goal, flag it as a critical issue even if individual criteria pass.',
+      '=== END SPRINT GOAL CHECK ===',
+      '',
+    ] : []),
     'Start by exploring the sandbox with file_list, then read key files and run tests to verify each acceptance criterion.',
   ].join('\n');
 
