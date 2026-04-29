@@ -100,7 +100,7 @@ export function createOrchestratorHooks(): OrchestratorHooks {
 
       const preferences = [
         `Resuming project: ${project.name}`,
-        project.repoUrl ? `GitHub repo URL: ${project.repoUrl}` : '',
+        project.repoUrl ? `Existing GitHub repo: ${project.repoUrl} — DO NOT call github_create_repo, the repo already exists. Clone it or set it as origin and push.` : '',
         arch?.architecture?.approach ? `Original tech stack: ${arch.architecture.approach}` : '',
         arch?.architecture?.structure ? `Original structure: ${arch.architecture.structure}` : '',
         arch?.architecture?.conventions ? `Conventions: ${arch.architecture.conventions}` : '',

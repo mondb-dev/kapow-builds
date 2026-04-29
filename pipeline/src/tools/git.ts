@@ -13,34 +13,31 @@ export async function githubCreateRepo(
   const octokit = new Octokit({ auth: token });
   const { data: user } = await octokit.users.getAuthenticated();
 
-  // Try the requested name, then append a short timestamp suffix on conflict
-  const candidates = [
-    repoName,
-    `${repoName}-${Date.now().toString(36)}`,
-  ];
-
   let repo: Awaited<ReturnType<typeof octokit.repos.createForAuthenticatedUser>>['data'] | null = null;
   let usedName = repoName;
 
-  for (const name of candidates) {
-    try {
-      const { data } = await octokit.repos.createForAuthenticatedUser({
-        name,
-        description,
-        private: isPrivate,
-        auto_init: false,
-      });
-      repo = data;
-      usedName = name;
-      break;
-    } catch (err: unknown) {
-      const status = (err as { status?: number }).status;
-      if (status === 422) continue; // name taken — try next candidate
+  try {
+    const { data } = await octokit.repos.createForAuthenticatedUser({
+      name: repoName,
+      description,
+      private: isPrivate,
+      auto_init: false,
+    });
+    repo = data;
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status;
+    if (status === 422) {
+      // Repo already exists — fetch it and reuse
+      const { data: existing } = await octokit.repos.get({ owner: user.login, repo: repoName });
+      repo = existing as typeof repo;
+      usedName = repoName;
+      console.log(`[git] Repo ${user.login}/${repoName} already exists — reusing.`);
+    } else {
       throw err;
     }
   }
 
-  if (!repo) throw new Error(`Could not create GitHub repo — all candidate names taken: ${candidates.join(', ')}`);
+  if (!repo) throw new Error(`Could not create or find GitHub repo: ${repoName}`);
 
   const git = getGit(sandboxPath);
 

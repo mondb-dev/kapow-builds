@@ -31,6 +31,7 @@ import { runTaskQA } from './agents/qa.js';
 import { evaluate as gateEvaluate } from './agents/gate.js';
 import { assertRunActive, RunStoppedError } from './run-control.js';
 import { createSandbox, resolveSandboxPath } from './agents/sandbox.js';
+import { setOnRepoCreated } from './agents/tool-dispatch.js';
 import { closeBrowsersForRun } from './tools/browser.js';
 import { maybeRequestPlanApproval, maybeRequestSprintReview, type SprintTaskResult } from './approval-gate.js';
 import { runRetrospective, type SprintSummary } from './agents/retrospective.js';
@@ -221,6 +222,13 @@ export async function runPipeline(
   extraPreferences?: string,
 ): Promise<PipelineResult> {
   try {
+
+  // Persist repoUrl as soon as it's created (don't wait for pipeline completion)
+  if (projectId) {
+    setOnRepoCreated((repoUrl) => {
+      prisma.project.update({ where: { id: projectId }, data: { repoUrl } }).catch(() => {});
+    });
+  }
 
   // ── Step 0: Load recipes, preferences, tools ────────────────────
   const scoredRecipes: ScoredRecipe[] = projectId

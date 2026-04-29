@@ -103,6 +103,14 @@ export function setCurrentRunId(runId: string): void {
   currentRunId = runId;
 }
 
+let onRepoCreatedHook: ((repoUrl: string) => void) | undefined;
+export function setOnRepoCreated(fn: (repoUrl: string) => void): void {
+  onRepoCreatedHook = fn;
+}
+export function getOnRepoCreated(): ((repoUrl: string) => void) | undefined {
+  return onRepoCreatedHook;
+}
+
 /**
  * Helpers used by core tool registrations to validate LLM-supplied input.
  * The model occasionally passes wrong types (e.g. number for `command`);

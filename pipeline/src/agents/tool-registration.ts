@@ -4,7 +4,7 @@
  * Registers all built-in tool executors on startup.
  * This replaces the switch statement in builder.ts.
  */
-import { registerTool } from './tool-dispatch.js';
+import { registerTool, getOnRepoCreated } from './tool-dispatch.js';
 import { shellExec } from '../tools/shell.js';
 import { fileWrite, fileRead, fileList } from '../tools/files.js';
 import { gitInit, gitCommit, gitBranch, gitPush, gitStatus, githubCreateRepo } from '../tools/git.js';
@@ -74,7 +74,10 @@ export function registerCoreTools(): void {
     if (!repo_name || repo_name === 'undefined') {
       throw new Error('github_create_repo requires a repo_name. Specify one explicitly in your tool call.');
     }
-    return githubCreateRepo(sandboxPath, repo_name, description ?? '', isPrivate);
+    const result = await githubCreateRepo(sandboxPath, repo_name, description ?? '', isPrivate);
+    const urlMatch = result.match(/https:\/\/github\.com\/\S+/);
+    if (urlMatch) getOnRepoCreated()?.(urlMatch[0]);
+    return result;
   });
 
   registerTool('vercel_deploy', async (input, sandboxPath) => {
