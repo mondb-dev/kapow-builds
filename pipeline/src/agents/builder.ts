@@ -109,7 +109,8 @@ Your execution rules:
 - After writing files, run the project (npm install && npm run build, or npm start briefly) to confirm it works.
 - If it fails, read the error, fix it, re-run. Do not declare success on a broken build.
 - Commit when done.
-- REPO NAME: When calling github_create_repo, you MUST provide repo_name explicitly. Check the task description for "named '<name>'" or check project preferences for "GitHub repo name:". Never call github_create_repo without a repo_name.`,
+- REPO NAME: When calling github_create_repo, you MUST provide repo_name explicitly. Check the task description for "named '<name>'" or check project preferences for "GitHub repo name:". Never call github_create_repo without a repo_name.
+- DEPLOY AUTH: NEVER run "vercel login", "netlify login", or any interactive auth command. Tokens are already set in the environment (VERCEL_TOKEN, NETLIFY_AUTH_TOKEN). Use the vercel_deploy or netlify_deploy tools, or run "vercel deploy --prod --yes" / "netlify deploy --prod" directly — the CLI picks up the token from env automatically.`,
 
   research: `You are the Researcher — a thorough analyst who finds, verifies, and synthesizes information.
 
