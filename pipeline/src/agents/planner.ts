@@ -44,6 +44,33 @@ Think carefully and answer each question before writing a single task:
 
 Be thorough. This reasoning directly shapes the quality of the plan.`;
 
+const AGILE_ADDENDUM = `
+=== AGILE METHODOLOGY (apply when preferences include "Methodology: agile") ===
+
+When agile methodology is requested, override default phase/task naming with sprint structure:
+
+PHASE NAMING: Name each phase as "Sprint N — <goal>" (e.g. "Sprint 1 — Core API & Data Model").
+Each sprint produces a working, demonstrable increment of the product.
+
+TASK FORMAT: Write each task description as a user story:
+  "As a <user>, I want <feature> so that <benefit>"
+  Keep it concrete. If a task is purely technical (e.g. DB schema), use:
+  "Set up <X> so that <dependent feature> can be built"
+
+ACCEPTANCE CRITERIA: Write in behavioural format:
+  - "Given <context>, when <action>, then <outcome>"
+  Or specific and measurable:
+  - "<endpoint> returns <status> with <response shape>"
+  - "<UI element> does <action> when <trigger>"
+  Never write vague criteria like "works correctly" or "looks good".
+
+SPRINT SIZE: 2–5 tasks per sprint. A sprint that cannot be demonstrated is too large — split it.
+
+SPRINT GOAL: Each phase description = the sprint goal. One clear sentence of what the team will deliver.
+
+DEPLOY RULE still applies: final sprint must include github_create_repo → deploy.
+`;
+
 const SYSTEM_PROMPT = `You are the Planner — a pragmatic lead who ships fast and hates waste.
 
 Your #1 rule: MATCH THE PLAN TO THE REQUEST SIZE.
@@ -235,7 +262,8 @@ export async function createProjectPlan(
   // ── Thinking turn: reason about scope and structure before planning ──
   const thinking = await runThinkingTurn(brief, preferences);
 
-  const systemPrompt = `${SYSTEM_PROMPT}\n\n${buildUntrustedPreamble()}`;
+  const isAgile = preferences?.includes('Methodology: agile') ?? false;
+  const systemPrompt = `${SYSTEM_PROMPT}${isAgile ? AGILE_ADDENDUM : ''}\n\n${buildUntrustedPreamble()}`;
   const userParts: string[] = [`Run ID: ${runId}`];
 
   const wrappedPrefs = wrapUntrusted('user_preferences', preferences);

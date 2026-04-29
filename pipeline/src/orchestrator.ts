@@ -31,7 +31,7 @@ import { evaluate as gateEvaluate } from './agents/gate.js';
 import { assertRunActive, RunStoppedError } from './run-control.js';
 import { createSandbox, resolveSandboxPath } from './agents/sandbox.js';
 import { closeBrowsersForRun } from './tools/browser.js';
-import { maybeRequestPlanApproval } from './approval-gate.js';
+import { maybeRequestPlanApproval, maybeRequestSprintReview, type SprintTaskResult } from './approval-gate.js';
 
 const TECHNICIAN_URL = process.env.TECHNICIAN_URL ?? 'http://localhost:3006';
 // ── Comms bus (replaces direct BoardClient) ──────────────────────────
@@ -394,10 +394,14 @@ export async function runPipeline(
   const failedTasks: string[] = [];
   let allArtifacts: Artifact[] = [];
   const allBuildLogs: string[] = [];
+  const isAgileMode = preferencesText.includes('Methodology: agile');
+  const sortedPhases = topologicalSort(projectPlan.phases);
 
-  for (const phase of topologicalSort(projectPlan.phases)) {
+  for (let phaseIndex = 0; phaseIndex < sortedPhases.length; phaseIndex++) {
+    const phase = sortedPhases[phaseIndex];
     assertRunActive(runId);
     onProgress(`[${runId}] Starting phase: ${phase.name}`);
+    const sprintTaskResults: SprintTaskResult[] = [];
 
     for (const task of topologicalSortTasks(phase.tasks, new Set(completedTasks))) {
       assertRunActive(runId);
@@ -479,6 +483,7 @@ export async function runPipeline(
       let iteration = 0;
       const maxIterations = 3;
       const previousQAResults: TaskQAResult[] = [];
+      let lastQAResult: TaskQAResult | undefined;
 
       while (iteration < maxIterations) {
         iteration++;
@@ -506,6 +511,7 @@ export async function runPipeline(
             ensureArtifact(buildResult, artifact);
           }
           previousQAResults.push(qaResult);
+          lastQAResult = qaResult;
         } catch (err) {
           onProgress(`[${runId}] QA failed on task ${task.id}: ${errMsg(err)}`);
           await comms.addEvent(task.id, cardId, `QA error: ${errMsg(err)}`, 'ERROR');
@@ -583,7 +589,6 @@ export async function runPipeline(
       if (taskPassed) {
         completedTasks.push(task.id);
         allArtifacts.push(...buildResult.artifacts);
-        // Persist artifacts
         for (const artifact of buildResult.artifacts) {
           addRunArtifact(runId, task.id, artifact.path, artifact.type, sandboxPath ?? '', undefined).catch(() => {});
         }
@@ -594,6 +599,35 @@ export async function runPipeline(
         await comms.addEvent(task.id, cardId, 'Max iterations reached', 'ERROR');
         failedTasks.push(task.id);
       }
+
+      // Collect sprint result for this task
+      sprintTaskResults.push({
+        taskId: task.id,
+        description: task.description,
+        passed: taskPassed,
+        qaIterations: iteration,
+        qaIssues: lastQAResult?.issues.map((i) => `[${i.severity}] ${i.description}`).filter(Boolean) ?? [],
+      });
+    }
+
+    // ── Agile: sprint review gate between phases ────────────────
+    const isLastPhase = phaseIndex === sortedPhases.length - 1;
+    if (isAgileMode && !isLastPhase) {
+      const nextPhase = sortedPhases[phaseIndex + 1];
+      onProgress(`[${runId}] Sprint ${phaseIndex + 1} complete. Awaiting review...`);
+      const sprintOutcome = await maybeRequestSprintReview({
+        runId,
+        sprintIndex: phaseIndex,
+        phase,
+        nextPhase,
+        taskResults: sprintTaskResults,
+      });
+      if (!sprintOutcome.approved) {
+        onProgress(`[${runId}] Sprint review: ${sprintOutcome.reason}`);
+        updateRunStatus(runId, 'failed', { diagnosis: sprintOutcome.reason }).catch(() => {});
+        return { success: false, diagnosis: sprintOutcome.reason };
+      }
+      onProgress(`[${runId}] Sprint ${phaseIndex + 1} approved. Starting Sprint ${phaseIndex + 2}...`);
     }
   }
 

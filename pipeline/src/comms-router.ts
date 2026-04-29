@@ -137,15 +137,18 @@ export class CommsRouter {
         }
         const repoMatch = arg.match(/--repo(?:-name)?=(\S+)/);
         const isPublic = /--public\b/.test(arg);
+        const isAgile = /--agile\b/.test(arg);
         const repoName = repoMatch?.[1];
         const brief = arg
           .replace(/--repo(?:-name)?=\S+/g, '')
           .replace(/--public\b/g, '')
+          .replace(/--agile\b/g, '')
           .replace(/\s{2,}/g, ' ')
           .trim();
         const flagPrefs = [
           repoName ? `GitHub repo name: ${repoName}` : '',
           `GitHub repo visibility: ${isPublic ? 'public' : 'private'}`,
+          isAgile ? 'Methodology: agile' : '',
         ].filter(Boolean).join('\n');
 
         await prisma.conversation.update({
@@ -217,7 +220,7 @@ export class CommsRouter {
       case '/help':
         await this.reply(msg,
           '<b>Kapow commands</b>\n' +
-          '/new &lt;brief&gt; [--repo=name] [--public] — start a project\n' +
+          '/new &lt;brief&gt; [--repo=name] [--public] [--agile] — start a project\n' +
           '/status — current run state\n' +
           '/cancel — stop the current run\n' +
           '/go — start planning after scoping\n' +
@@ -272,10 +275,11 @@ export class CommsRouter {
 export async function requestApproval(args: {
   commsBus: CommsBus;
   conversationId: string;
-  kind: 'plan_approval' | 'design_approval';
+  kind: 'plan_approval' | 'design_approval' | 'sprint_review';
   text: string;
   payload?: Record<string, unknown>;
   timeoutMs?: number;
+  buttons?: { id: string; label: string; style?: 'primary' | 'danger' }[];
 }): Promise<InboundReply> {
   const req: PromptRequest = {
     conversationId: args.conversationId,
@@ -283,7 +287,7 @@ export async function requestApproval(args: {
     text: args.text,
     payload: args.payload,
     timeoutMs: args.timeoutMs,
-    buttons: [
+    buttons: args.buttons ?? [
       { id: 'approve', label: '✅ Approve', style: 'primary' },
       { id: 'revise', label: '✏️ Revise' },
       { id: 'cancel', label: '🛑 Cancel', style: 'danger' },

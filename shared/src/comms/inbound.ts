@@ -54,6 +54,7 @@ export type InboundHandler = (msg: InboundMessage) => Promise<void>;
 export type PromptKind =
   | 'plan_approval'
   | 'design_approval'
+  | 'sprint_review'
   | 'pr_approval'
   | 'infra_spend'
   | 'freeform_question';

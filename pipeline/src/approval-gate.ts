@@ -7,10 +7,18 @@
  * runs), the gate is a no-op and the run continues automatically.
  */
 import { prisma } from 'kapow-db';
-import type { ProjectPlan } from 'kapow-shared';
+import type { ProjectPlan, Phase } from 'kapow-shared';
 import { getCommsBus } from './orchestrator.js';
 import { requestApproval } from './comms-router.js';
 import { stopRun } from './run-control.js';
+
+export interface SprintTaskResult {
+  taskId: string;
+  description: string;
+  passed: boolean;
+  qaIterations: number;
+  qaIssues: string[];
+}
 
 export interface PlanApprovalOutcome {
   approved: boolean;
@@ -103,4 +111,72 @@ function renderPlanSummary(plan: ProjectPlan): string {
 
 function escape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export async function maybeRequestSprintReview(args: {
+  runId: string;
+  sprintIndex: number;
+  phase: Phase;
+  nextPhase: Phase;
+  taskResults: SprintTaskResult[];
+}): Promise<PlanApprovalOutcome> {
+  const conv = await prisma.conversation.findFirst({ where: { runId: args.runId } });
+  if (!conv) return { approved: true, reason: 'no-conversation' };
+
+  const text = renderSprintReport(args.sprintIndex, args.phase, args.nextPhase, args.taskResults);
+
+  const reply = await requestApproval({
+    commsBus: getCommsBus(),
+    conversationId: conv.id,
+    kind: 'sprint_review',
+    text,
+    payload: { runId: args.runId, sprintIndex: args.sprintIndex },
+    buttons: [
+      { id: 'approve', label: '▶️ Continue to next sprint', style: 'primary' },
+      { id: 'cancel', label: '⏹ Stop here', style: 'danger' },
+    ],
+  });
+
+  if (reply.status === 'expired') return { approved: false, reason: 'Sprint review timed out.' };
+  if (reply.status === 'cancelled') return { approved: false, reason: 'Run cancelled during sprint review.' };
+  if (reply.choice === 'approve') return { approved: true, reason: 'approved' };
+  stopRun(args.runId, 'User stopped after sprint review.');
+  return { approved: false, reason: 'User stopped after sprint review.' };
+}
+
+function renderSprintReport(
+  sprintIndex: number,
+  phase: Phase,
+  nextPhase: Phase,
+  taskResults: SprintTaskResult[],
+): string {
+  const passed = taskResults.filter((t) => t.passed);
+  const failed = taskResults.filter((t) => !t.passed);
+  const totalIterations = taskResults.reduce((n, t) => n + t.qaIterations, 0);
+
+  const taskLines = taskResults.map((t) => {
+    const icon = t.passed ? '✅' : '❌';
+    const issues = t.qaIssues.length > 0
+      ? '\n' + t.qaIssues.slice(0, 3).map((i) => `     ⚠️ ${escape(i.slice(0, 120))}`).join('\n')
+      : '';
+    const iters = t.qaIterations > 1 ? ` <i>(${t.qaIterations} QA iterations)</i>` : '';
+    return `${icon} ${escape(t.description.slice(0, 160))}${iters}${issues}`;
+  }).join('\n');
+
+  const fixNote = totalIterations > taskResults.length
+    ? `\n<i>🔧 ${totalIterations - taskResults.length} QA fix${totalIterations - taskResults.length > 1 ? 'es' : ''} applied during this sprint</i>`
+    : '';
+
+  return [
+    `🏁 <b>Sprint ${sprintIndex + 1} complete</b> — ${escape(phase.name)}`,
+    '',
+    `Tasks: ${passed.length} ✅ passed${failed.length > 0 ? `, ${failed.length} ❌ failed` : ''}`,
+    fixNote,
+    '',
+    '<b>Test Report:</b>',
+    taskLines,
+    '',
+    `<b>Up next:</b> Sprint ${sprintIndex + 2} — ${escape(nextPhase.name)}`,
+    escape(nextPhase.description?.slice(0, 200) ?? ''),
+  ].filter((l) => l !== null).join('\n');
 }
