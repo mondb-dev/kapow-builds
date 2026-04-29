@@ -6,7 +6,11 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes per command
 
-const SAFE_ENV_VARS = ['PATH', 'HOME', 'PWD', 'LANG', 'TERM', 'NODE_ENV', 'TMPDIR'];
+const SAFE_ENV_VARS = [
+  'PATH', 'HOME', 'PWD', 'LANG', 'TERM', 'NODE_ENV', 'TMPDIR',
+  'VERCEL_TOKEN', 'VERCEL_SCOPE', 'NETLIFY_AUTH_TOKEN', 'NETLIFY_SITE_ID',
+  'GITHUB_TOKEN', 'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL',
+];
 
 export async function shellExec(
   command: string,
