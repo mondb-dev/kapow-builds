@@ -9,7 +9,7 @@ COPY db/prisma board/prisma
 
 WORKDIR /app/board
 
-RUN npm ci
+RUN npm install --ignore-scripts
 RUN npx prisma generate
 
 COPY board/ .
