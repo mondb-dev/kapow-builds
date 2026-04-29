@@ -22,6 +22,7 @@ import {
   getProjectPreferences, getGlobalPreferences, formatPreferencesForPrompt,
 } from 'kapow-db/preferences';
 import { updateRunStatus, addRunArtifact, addRunLog, getRun } from 'kapow-db/runs';
+import { prisma } from 'kapow-db';
 
 // Direct function imports — no HTTP between agents
 import { createProjectPlan } from './agents/planner.js';
@@ -681,10 +682,27 @@ export async function runPipeline(
     }
 
     const deployUrl = allBuildLogs
-      .map((l) => l.match(/Result:\s*(Deployed to [^:]+:\s*(https:\/\/\S+))/i))
+      .map((l) => l.match(/Result:\s*Deployed to [^:]+:\s*(https:\/\/\S+)/i))
       .filter(Boolean)
-      .map((m) => m![2])
+      .map((m) => m![1])
       .pop();
+
+    const repoUrl = allBuildLogs
+      .map((l) => l.match(/Result:\s*.*?(https:\/\/github\.com\/\S+)/i))
+      .filter(Boolean)
+      .map((m) => m![1])
+      .pop();
+
+    // Persist URLs on the project for future resume
+    if (projectId && (repoUrl || deployUrl)) {
+      prisma.project.update({
+        where: { id: projectId },
+        data: {
+          ...(repoUrl ? { repoUrl } : {}),
+          planData: projectPlan as never,
+        },
+      }).catch(() => {});
+    }
 
     const completionMsg = deployUrl
       ? `All ${completedTasks.length} tasks passed. Live at: ${deployUrl}`

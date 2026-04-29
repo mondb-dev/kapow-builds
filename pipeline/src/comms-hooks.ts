@@ -50,6 +50,82 @@ export function createOrchestratorHooks(): OrchestratorHooks {
       return { projectId: project.id, runId: run.id };
     },
 
+    async listProjects() {
+      const projects = await prisma.project.findMany({
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+        include: {
+          runs: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { status: true, createdAt: true, planData: true },
+          },
+        },
+      });
+
+      if (projects.length === 0) return 'No projects yet. Use /new to start one.';
+
+      const lines = projects.map((p, i) => {
+        const run = p.runs[0];
+        const status = run ? run.status.toLowerCase() : 'no runs';
+        const icon = status === 'done' ? '✅' : status === 'failed' ? '❌' : status === 'building' ? '🔨' : '📋';
+        const arch = run?.planData as { architecture?: { approach?: string } } | null;
+        const stack = arch?.architecture?.approach?.slice(0, 60) ?? '';
+        const age = run ? timeSince(run.createdAt) : '';
+        return `${i + 1}. ${icon} <b>${escape(p.name)}</b>${age ? ` — ${age}` : ''}${stack ? `\n   <i>${escape(stack)}</i>` : ''}${p.repoUrl ? `\n   🔗 ${escape(p.repoUrl)}` : ''}`;
+      });
+
+      return `<b>Projects (${projects.length})</b>\n\n${lines.join('\n\n')}\n\nUse /resume &lt;number&gt; &lt;direction&gt; to update a project.`;
+    },
+
+    async resumeProject({ projectId: indexStr, direction, conversationId, requestedBy }) {
+      const index = parseInt(indexStr, 10);
+      const projects = await prisma.project.findMany({
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+        include: {
+          runs: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { plan: true, planData: true },
+          },
+        },
+      });
+
+      const project = projects[index];
+      if (!project) throw new Error(`No project at position ${index + 1}. Use /projects to see the list.`);
+
+      const lastRun = project.runs[0];
+      const arch = lastRun?.planData as { architecture?: { approach?: string; structure?: string; conventions?: string } } | null;
+
+      const preferences = [
+        `Resuming project: ${project.name}`,
+        project.repoUrl ? `GitHub repo URL: ${project.repoUrl}` : '',
+        arch?.architecture?.approach ? `Original tech stack: ${arch.architecture.approach}` : '',
+        arch?.architecture?.structure ? `Original structure: ${arch.architecture.structure}` : '',
+        arch?.architecture?.conventions ? `Conventions: ${arch.architecture.conventions}` : '',
+        `Original brief: ${lastRun?.plan?.slice(0, 300) ?? project.description ?? ''}`,
+      ].filter(Boolean).join('\n');
+
+      const run = await prisma.run.create({
+        data: { projectId: project.id, plan: direction, status: 'PENDING' },
+      });
+
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { projectId: project.id, runId: run.id },
+      });
+
+      void runPipeline(run.id, direction, (line) => {
+        console.log(`[run ${run.id}] ${line}`);
+      }, project.id, preferences).catch((err) => {
+        console.error(`[run ${run.id}] resume failed:`, err instanceof Error ? err.message : err);
+      });
+
+      console.log(`[hooks] Resumed project "${project.name}" (run ${run.id}) for ${requestedBy.userName}`);
+      return { projectId: project.id, runId: run.id };
+    },
+
     async cancelRun(runId) {
       const stopped = stopRun(runId, 'Cancelled via comms.');
       if (!stopped) {
@@ -85,4 +161,16 @@ export function createOrchestratorHooks(): OrchestratorHooks {
 function deriveProjectName(brief: string): string {
   const firstLine = brief.split('\n')[0].trim();
   return firstLine.length > 60 ? firstLine.slice(0, 57) + '…' : firstLine || 'Untitled';
+}
+
+function escape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function timeSince(date: Date): string {
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
 }

@@ -54,6 +54,17 @@ export interface OrchestratorHooks {
     preferences?: string;
   }): Promise<{ projectId: string; runId: string }>;
 
+  /** List all projects for this user. */
+  listProjects(): Promise<string>;
+
+  /** Resume an existing project with new direction. */
+  resumeProject(args: {
+    projectId: string;
+    direction: string;
+    conversationId: string;
+    requestedBy: { userId: string; userName: string };
+  }): Promise<{ projectId: string; runId: string }>;
+
   /** User asked to cancel an in-flight run. */
   cancelRun(runId: string): Promise<void>;
 
@@ -217,10 +228,44 @@ export class CommsRouter {
         return;
       }
 
+      case '/projects': {
+        const list = await this.deps.hooks.listProjects();
+        await this.reply(msg, list);
+        return;
+      }
+
+      case '/resume': {
+        const resumeMatch = arg.match(/^(\d+)\s+(.+)$/s);
+        if (!resumeMatch) {
+          await this.reply(msg, 'Usage: /resume <number> <direction>\nExample: /resume 2 add dark mode and update the hero animation\n\nUse /projects to see the list.');
+          return;
+        }
+        const projectIndex = parseInt(resumeMatch[1], 10) - 1;
+        const direction = resumeMatch[2].trim();
+        await this.reply(msg, '🔄 Resuming project — planning the update...');
+        try {
+          const { projectId, runId } = await this.deps.hooks.resumeProject({
+            projectId: projectIndex.toString(),
+            direction,
+            conversationId: conv.id,
+            requestedBy: { userId: msg.userId, userName: msg.userName },
+          });
+          await prisma.conversation.update({
+            where: { id: conv.id },
+            data: { projectId, runId, phase: ConversationPhase.Planning },
+          });
+        } catch (err) {
+          await this.reply(msg, `❌ Resume failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        return;
+      }
+
       case '/help':
         await this.reply(msg,
           '<b>Kapow commands</b>\n' +
           '/new &lt;brief&gt; [--repo=name] [--public] [--agile] — start a project\n' +
+          '/projects — list all projects\n' +
+          '/resume &lt;number&gt; &lt;direction&gt; — update an existing project\n' +
           '/status — current run state\n' +
           '/cancel — stop the current run\n' +
           '/go — start planning after scoping\n' +

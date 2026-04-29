@@ -44,6 +44,22 @@ Think carefully and answer each question before writing a single task:
 
 Be thorough. This reasoning directly shapes the quality of the plan.`;
 
+const RESUME_ADDENDUM = `
+=== RESUMING EXISTING PROJECT ===
+
+This is NOT a fresh build. You are planning an UPDATE to an existing, deployed project.
+
+CRITICAL RULES:
+1. CLONE FIRST: The very first task in phase 1 must be a shell task that clones the existing GitHub repo. Use: git clone <repo_url> .
+2. DELTA ONLY: Plan only the changes described in the brief. Do not re-implement what already exists.
+3. NO SCAFFOLD: Do not create new project structure, package.json, or boilerplate — it already exists.
+4. PRESERVE: Assume existing functionality works. Only touch what the brief asks to change.
+5. RE-DEPLOY: The final task must re-deploy to the same platform (Vercel/Netlify/Firebase) used originally.
+
+The existing project's tech stack and architecture are in the user preferences. Use them to inform your plan.
+If the GitHub repo URL is provided in preferences, use it exactly in the clone task.
+`;
+
 const AGILE_ADDENDUM = `
 === AGILE METHODOLOGY (apply when preferences include "Methodology: agile") ===
 
@@ -263,7 +279,8 @@ export async function createProjectPlan(
   const thinking = await runThinkingTurn(brief, preferences);
 
   const isAgile = preferences?.includes('Methodology: agile') ?? false;
-  const systemPrompt = `${SYSTEM_PROMPT}${isAgile ? AGILE_ADDENDUM : ''}\n\n${buildUntrustedPreamble()}`;
+  const isResume = preferences?.includes('Resuming project:') ?? false;
+  const systemPrompt = `${SYSTEM_PROMPT}${isAgile ? AGILE_ADDENDUM : ''}${isResume ? RESUME_ADDENDUM : ''}\n\n${buildUntrustedPreamble()}`;
   const userParts: string[] = [`Run ID: ${runId}`];
 
   const wrappedPrefs = wrapUntrusted('user_preferences', preferences);

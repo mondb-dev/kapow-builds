@@ -9,6 +9,8 @@ const DB_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@local
 const HOST = process.env.HOST || '127.0.0.1';
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || process.env.AUTH_SECRET || '';
 
+const e = process.env;
+
 module.exports = {
   apps: [
     {
@@ -21,6 +23,24 @@ module.exports = {
         DATABASE_URL: DB_URL,
         INTERNAL_API_KEY,
         TECHNICIAN_URL: 'http://localhost:3006',
+        // AI providers
+        AI_PROVIDER: e.AI_PROVIDER,
+        AI_MODEL_STRONG: e.AI_MODEL_STRONG,
+        AI_MODEL_BALANCED: e.AI_MODEL_BALANCED,
+        AI_MODEL_FAST: e.AI_MODEL_FAST,
+        GEMINI_API_KEY: e.GEMINI_API_KEY,
+        ANTHROPIC_API_KEY: e.ANTHROPIC_API_KEY,
+        GOOGLE_CLOUD_PROJECT: e.GOOGLE_CLOUD_PROJECT,
+        GOOGLE_CLOUD_LOCATION: e.GOOGLE_CLOUD_LOCATION,
+        // Deploy
+        GITHUB_TOKEN: e.GITHUB_TOKEN,
+        VERCEL_TOKEN: e.VERCEL_TOKEN,
+        VERCEL_SCOPE: e.VERCEL_SCOPE,
+        NETLIFY_TOKEN: e.NETLIFY_TOKEN,
+        GOOGLE_APPLICATION_CREDENTIALS: e.GOOGLE_APPLICATION_CREDENTIALS,
+        // Comms
+        COMMS_TELEGRAM_BOT_TOKEN: e.COMMS_TELEGRAM_BOT_TOKEN,
+        COMMS_TELEGRAM_CHAT_ID: e.COMMS_TELEGRAM_CHAT_ID,
       },
     },
     {
