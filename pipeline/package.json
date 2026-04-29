@@ -11,13 +11,14 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.1",
+    "@octokit/rest": "^21.0.2",
     "axios": "^1.7.9",
     "express": "^4.21.2",
+    "googleapis": "^171.4.0",
     "kapow-db": "file:../db",
     "kapow-shared": "file:../shared",
     "puppeteer-core": "^23.10.4",
-    "simple-git": "^3.27.0",
-    "@octokit/rest": "^21.0.2"
+    "simple-git": "^3.27.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

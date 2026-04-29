@@ -306,12 +306,12 @@ ${buildUntrustedPreamble()}`;
 
 /** Tool sets by intent — determines what tools are available for each work type */
 const TOOLS_BY_INTENT: Record<TaskIntent, Set<string>> = {
-  development: new Set(['file_write', 'file_read', 'file_list', 'shell_exec', 'git_commit']),
-  research:    new Set(['file_write', 'file_read', 'file_list', 'browser_navigate', 'browser_screenshot']),
-  writing:     new Set(['file_write', 'file_read', 'file_list']),
-  analysis:    new Set(['file_write', 'file_read', 'file_list', 'shell_exec', 'browser_navigate']),
-  audit:       new Set(['file_write', 'file_read', 'file_list', 'browser_navigate', 'browser_screenshot', 'browser_set_viewport']),
-  creative:    new Set(['file_write', 'file_read', 'file_list']),
+  development: new Set(['file_write', 'file_read', 'file_list', 'shell_exec', 'git_commit', 'gdrive_upload', 'gdrive_read']),
+  research:    new Set(['file_write', 'file_read', 'file_list', 'browser_navigate', 'browser_screenshot', 'gdrive_read', 'gdocs_create', 'gsheets_read']),
+  writing:     new Set(['file_write', 'file_read', 'file_list', 'gdocs_create', 'gdocs_read', 'gdocs_append', 'gdrive_upload']),
+  analysis:    new Set(['file_write', 'file_read', 'file_list', 'shell_exec', 'browser_navigate', 'gsheets_read', 'gsheets_write', 'gsheets_create', 'gdocs_create']),
+  audit:       new Set(['file_write', 'file_read', 'file_list', 'browser_navigate', 'browser_screenshot', 'browser_set_viewport', 'gdocs_create']),
+  creative:    new Set(['file_write', 'file_read', 'file_list', 'gdocs_create', 'gdrive_upload']),
 };
 
 /** Legacy tool sets by task type — fallback when intent is not set */
@@ -329,6 +329,10 @@ const ALL_TOOL_NAMES = new Set([
   'git_init', 'git_commit', 'git_branch', 'git_push', 'git_status', 'github_create_repo',
   'vercel_deploy', 'netlify_deploy', 'firebase_deploy',
   'browser_navigate', 'browser_screenshot', 'browser_set_viewport',
+  'gdrive_upload', 'gdrive_read', 'gdrive_list',
+  'gdocs_create', 'gdocs_read', 'gdocs_append',
+  'gsheets_read', 'gsheets_write', 'gsheets_create',
+  'gmail_send',
 ]);
 
 function buildClaudeTools(availableTools: AvailableTool[]): AIToolDef[] {
@@ -376,6 +380,16 @@ function getDefaultTools(): AvailableTool[] {
     { id: 'core-firebase-deploy', name: 'firebase_deploy', description: 'Deploy to Firebase Hosting and return the live URL', parameters: [{ name: 'project_id', type: 'string', description: 'GCP project ID (uses GOOGLE_CLOUD_PROJECT env if omitted)', required: false }, { name: 'public_dir', type: 'string', description: 'Directory to publish (default: dist)', required: false }], returnType: 'string' },
     { id: 'core-browser-navigate', name: 'browser_navigate', description: 'Navigate to a URL in the headless browser', parameters: [{ name: 'url', type: 'string', description: 'URL to navigate to', required: true }], returnType: '{ title, content, url }' },
     { id: 'core-browser-screenshot', name: 'browser_screenshot', description: 'Take a screenshot of the current browser page', parameters: [{ name: 'filename', type: 'string', description: 'Output filename (relative to sandbox, .png)', required: true }], returnType: '{ path, size }' },
+    { id: 'core-gdrive-upload', name: 'gdrive_upload', description: 'Upload a file to Google Drive and return a shareable link', parameters: [{ name: 'file_path', type: 'string', description: 'Relative path of file in sandbox to upload', required: true }, { name: 'file_name', type: 'string', description: 'Name to give the file in Drive', required: false }, { name: 'folder_id', type: 'string', description: 'Drive folder ID to upload into', required: false }, { name: 'mime_type', type: 'string', description: 'MIME type of the file', required: false }], returnType: '{ fileId, name, url }' },
+    { id: 'core-gdrive-read', name: 'gdrive_read', description: 'Download a file from Google Drive into the sandbox', parameters: [{ name: 'file_id', type: 'string', description: 'Google Drive file ID', required: true }, { name: 'output_path', type: 'string', description: 'Relative path to save the file in sandbox', required: true }], returnType: 'string' },
+    { id: 'core-gdrive-list', name: 'gdrive_list', description: 'List files in Google Drive (optionally within a folder)', parameters: [{ name: 'folder_id', type: 'string', description: 'Drive folder ID to list (omit for root)', required: false }], returnType: 'Array<{ id, name, mimeType, modifiedTime, webViewLink }>' },
+    { id: 'core-gdocs-create', name: 'gdocs_create', description: 'Create a new Google Doc with content and return its URL', parameters: [{ name: 'title', type: 'string', description: 'Document title', required: true }, { name: 'content', type: 'string', description: 'Plain text content to insert', required: true }], returnType: '{ docId, title, url }' },
+    { id: 'core-gdocs-read', name: 'gdocs_read', description: 'Read the text content of a Google Doc', parameters: [{ name: 'document_id', type: 'string', description: 'Google Docs document ID', required: true }], returnType: 'string' },
+    { id: 'core-gdocs-append', name: 'gdocs_append', description: 'Append text to an existing Google Doc', parameters: [{ name: 'document_id', type: 'string', description: 'Google Docs document ID', required: true }, { name: 'content', type: 'string', description: 'Text to append', required: true }], returnType: 'string' },
+    { id: 'core-gsheets-read', name: 'gsheets_read', description: 'Read rows from a Google Sheet as JSON', parameters: [{ name: 'spreadsheet_id', type: 'string', description: 'Google Sheets spreadsheet ID', required: true }, { name: 'range', type: 'string', description: 'A1 notation range (e.g. Sheet1!A1:D10)', required: false }], returnType: 'Array<Array<string>>' },
+    { id: 'core-gsheets-write', name: 'gsheets_write', description: 'Write rows to a Google Sheet', parameters: [{ name: 'spreadsheet_id', type: 'string', description: 'Google Sheets spreadsheet ID', required: true }, { name: 'range', type: 'string', description: 'A1 notation range to write into', required: true }, { name: 'values', type: 'array', description: '2D array of values to write', required: true }], returnType: 'string' },
+    { id: 'core-gsheets-create', name: 'gsheets_create', description: 'Create a new Google Sheet and return its URL', parameters: [{ name: 'title', type: 'string', description: 'Spreadsheet title', required: true }, { name: 'headers', type: 'array', description: 'Optional header row values', required: false }], returnType: '{ spreadsheetId, title, url }' },
+    { id: 'core-gmail-send', name: 'gmail_send', description: 'Send an email via Gmail', parameters: [{ name: 'to', type: 'string', description: 'Recipient email address', required: true }, { name: 'subject', type: 'string', description: 'Email subject', required: true }, { name: 'body', type: 'string', description: 'Email body (plain text or HTML)', required: true }, { name: 'is_html', type: 'boolean', description: 'Set true if body is HTML', required: false }], returnType: 'string' },
   ];
 }
 
@@ -507,13 +521,20 @@ async function runAgentLoop(
     }
     iterations++;
 
-    const response = await p.chat({
-      model: m,
-      maxTokens: 16384,
-      system: systemPrompt,
-      tools: claudeTools,
-      messages,
-    });
+    let response: Awaited<ReturnType<typeof p.chat>>;
+    let aiAttempt = 0;
+    while (true) {
+      try {
+        response = await p.chat({ model: m, maxTokens: 16384, system: systemPrompt, tools: claudeTools, messages });
+        break;
+      } catch (aiErr) {
+        aiAttempt++;
+        if (aiAttempt >= 3) throw aiErr;
+        const wait = aiAttempt * 15000;
+        logs.push(`[retry] Vertex error (attempt ${aiAttempt}), waiting ${wait / 1000}s…`);
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
 
     for (const block of response.content) {
       if (block.type === 'text' && block.text.trim()) {
@@ -572,13 +593,20 @@ async function runAgentLoopWithDiscovery(
     }
     iterations++;
 
-    const response = await p.chat({
-      model: m,
-      maxTokens: 16384,
-      system: systemPrompt,
-      tools: claudeTools,
-      messages,
-    });
+    let response: Awaited<ReturnType<typeof p.chat>>;
+    let aiAttempt = 0;
+    while (true) {
+      try {
+        response = await p.chat({ model: m, maxTokens: 16384, system: systemPrompt, tools: claudeTools, messages });
+        break;
+      } catch (aiErr) {
+        aiAttempt++;
+        if (aiAttempt >= 3) throw aiErr;
+        const wait = aiAttempt * 15000;
+        logs.push(`[retry] Vertex error (attempt ${aiAttempt}), waiting ${wait / 1000}s…`);
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
 
     for (const block of response.content) {
       if (block.type === 'text' && block.text.trim()) {

@@ -216,6 +216,7 @@ export async function runPipeline(
   plan: string,
   onProgress: (msg: string) => void,
   projectId?: string,
+  extraPreferences?: string,
 ): Promise<PipelineResult> {
   try {
 
@@ -230,7 +231,7 @@ export async function runPipeline(
     ? await getProjectPreferences(projectId)
     : await getGlobalPreferences();
   const recipesText = formatRecipesForPrompt(recipes);
-  const preferencesText = formatPreferencesForPrompt(preferences);
+  const preferencesText = [formatPreferencesForPrompt(preferences), extraPreferences].filter(Boolean).join('\n');
   if (scoredRecipes.length > 0) {
     for (const sr of scoredRecipes.slice(0, 3)) {
       onProgress(`[${runId}] 📖 Recipe: "${sr.name.split('\n')[0].slice(0, 60)}" (${(sr.similarity * 100).toFixed(0)}% match)`);

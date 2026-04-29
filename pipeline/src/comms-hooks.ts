@@ -17,7 +17,7 @@ import type { OrchestratorHooks } from './comms-router.js';
 
 export function createOrchestratorHooks(): OrchestratorHooks {
   return {
-    async startProject({ brief, conversationId, requestedBy }) {
+    async startProject({ brief, conversationId, requestedBy, preferences }) {
       // Create a Project + Run; runPipeline owns planning and beyond.
       const project = await prisma.project.create({
         data: {
@@ -42,7 +42,7 @@ export function createOrchestratorHooks(): OrchestratorHooks {
       // Fire-and-forget; progress streams back through CommsBus events.
       void runPipeline(run.id, brief, (line) => {
         console.log(`[run ${run.id}] ${line}`);
-      }, project.id).catch((err) => {
+      }, project.id, preferences).catch((err) => {
         console.error(`[run ${run.id}] failed:`, err instanceof Error ? err.message : err);
       });
 

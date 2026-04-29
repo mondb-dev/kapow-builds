@@ -270,13 +270,26 @@ export async function runTaskQA(req: TaskQARequest): Promise<TaskQAResult> {
     }
     iterations++;
 
-    const response = await provider.chat({
-      model: models.balanced,
-      maxTokens: 16384,
-      system: systemPrompt,
-      tools: claudeTools,
-      messages,
-    });
+    let response: Awaited<ReturnType<typeof provider.chat>>;
+    let aiAttempt = 0;
+    while (true) {
+      try {
+        response = await provider.chat({
+          model: models.balanced,
+          maxTokens: 16384,
+          system: systemPrompt,
+          tools: claudeTools,
+          messages,
+        });
+        break;
+      } catch (aiErr) {
+        aiAttempt++;
+        if (aiAttempt >= 3) throw aiErr;
+        const wait = aiAttempt * 15000;
+        console.warn(`[qa] Vertex error (attempt ${aiAttempt}), retrying in ${wait / 1000}s: ${aiErr instanceof Error ? aiErr.message : aiErr}`);
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
 
     if (response.stopReason === 'tool_use') {
       messages.push({ role: 'assistant', content: response.content });

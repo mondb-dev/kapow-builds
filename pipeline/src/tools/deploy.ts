@@ -15,9 +15,22 @@ export async function vercelDeploy(
   const token = process.env.VERCEL_TOKEN;
   if (!token) throw new Error('VERCEL_TOKEN env var is not set');
 
+  // Resolve scope: explicit env var > derive from token via API
+  let scope = process.env.VERCEL_SCOPE ?? '';
+  if (!scope) {
+    try {
+      const r = await fetch('https://api.vercel.com/v2/user', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await r.json() as { user?: { defaultTeamId?: string } };
+      scope = data.user?.defaultTeamId ?? '';
+    } catch { /* skip — CLI will error with a clear message */ }
+  }
+
   const args = [
     `npx vercel --prod --yes`,
     `--name ${shellQuote(projectName)}`,
+    scope ? `--scope ${shellQuote(scope)}` : '',
     buildCommand ? `--build-env BUILD_COMMAND=${shellQuote(buildCommand)}` : '',
     outputDir ? `--local-config-file vercel.json` : '',
   ]

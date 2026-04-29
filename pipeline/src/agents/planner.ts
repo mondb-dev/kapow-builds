@@ -30,7 +30,12 @@ Think carefully and answer each question before writing a single task:
    - Good: "pressing ArrowLeft moves block one cell left; block stops at x=0 boundary"
    Criteria must be specific and mechanically verifiable.
 
-7. DELIVERY ARC: How does this work get into users' hands?
+7. RUNTIME CHECK: Does the tech stack require any SDK not in this list: Node.js, Python 3, standard Unix tools?
+   Available for web: React, Vue, Vite, plain HTML/CSS/JS, Express, any npm package.
+   NOT available: Flutter, Dart, Ruby, Java, Kotlin, Swift, .NET, Go, Rust, PHP, mobile SDKs.
+   If you were about to choose an unavailable runtime, switch to a Node.js/web equivalent now.
+
+8. DELIVERY ARC: How does this work get into users' hands?
    - For web/app development: the final phase MUST be github_create_repo → deploy (Vercel/Netlify/Firebase).
    - For writing/research: the final task MUST produce a named output file.
    - Do not end a plan mid-build.
@@ -81,6 +86,12 @@ If the brief combines intents (e.g., "research X then write a report"), use the 
 
 **development** — Plan as software: architecture, implementation tasks, integration.
   approach = tech stack and frameworks. structure = file/directory layout. conventions = coding patterns.
+
+  RUNTIME CONSTRAINT: The execution environment has Node.js, Python 3, and standard Unix tools available.
+  It does NOT have: Flutter, Dart, Ruby, Java, Kotlin, Swift, .NET, Go, Rust, PHP, or any mobile SDK.
+  For web projects, use: React, Vue, plain HTML/CSS/JS, or any Node.js framework.
+  Do NOT plan work that requires an unavailable runtime — the build will fail.
+
   DEPLOY RULE: Any web project (website, web app, frontend, landing page) MUST include a final deploy phase with these tasks in order:
     1. github_create_repo — push code to a new GitHub repo
     2. vercel_deploy OR netlify_deploy OR firebase_deploy — publish to a live URL

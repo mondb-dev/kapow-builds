@@ -51,6 +51,7 @@ export interface OrchestratorHooks {
     brief: string;
     conversationId: string;
     requestedBy: { userId: string; userName: string };
+    preferences?: string;
   }): Promise<{ projectId: string; runId: string }>;
 
   /** User asked to cancel an in-flight run. */
@@ -131,18 +132,32 @@ export class CommsRouter {
     switch (cmd) {
       case '/new': {
         if (!arg) {
-          await this.reply(msg, 'Usage: /new <brief>\nExample: /new noir storytelling site, react + p5js');
+          await this.reply(msg, 'Usage: /new <brief> [--repo=<name>] [--public]\nExample: /new noir storytelling site, react + p5js --repo=noir-site');
           return;
         }
+        const repoMatch = arg.match(/--repo(?:-name)?=(\S+)/);
+        const isPublic = /--public\b/.test(arg);
+        const repoName = repoMatch?.[1];
+        const brief = arg
+          .replace(/--repo(?:-name)?=\S+/g, '')
+          .replace(/--public\b/g, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        const flagPrefs = [
+          repoName ? `GitHub repo name: ${repoName}` : '',
+          `GitHub repo visibility: ${isPublic ? 'public' : 'private'}`,
+        ].filter(Boolean).join('\n');
+
         await prisma.conversation.update({
           where: { id: conv.id },
-          data: { phase: ConversationPhase.Planning, scope: arg },
+          data: { phase: ConversationPhase.Planning, scope: brief },
         });
         await this.reply(msg, '🚀 Starting — planning phase begins.');
         const { projectId, runId } = await this.deps.hooks.startProject({
-          brief: arg,
+          brief,
           conversationId: conv.id,
           requestedBy: { userId: msg.userId, userName: msg.userName },
+          preferences: flagPrefs,
         });
         await prisma.conversation.update({
           where: { id: conv.id },
@@ -202,7 +217,7 @@ export class CommsRouter {
       case '/help':
         await this.reply(msg,
           '<b>Kapow commands</b>\n' +
-          '/new &lt;brief&gt; — start a project\n' +
+          '/new &lt;brief&gt; [--repo=name] [--public] — start a project\n' +
           '/status — current run state\n' +
           '/cancel — stop the current run\n' +
           '/go — start planning after scoping\n' +

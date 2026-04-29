@@ -10,6 +10,12 @@ import { fileWrite, fileRead, fileList } from '../tools/files.js';
 import { gitInit, gitCommit, gitBranch, gitPush, gitStatus, githubCreateRepo } from '../tools/git.js';
 import { browserNavigate, browserScreenshot, browserSetViewport } from '../tools/browser.js';
 import { vercelDeploy, netlifyDeploy, firebaseDeploy } from '../tools/deploy.js';
+import {
+  gdriveUpload, gdriveRead, gdriveList,
+  gdocsCreate, gdocsRead, gdocsAppend,
+  gsheetsRead, gsheetsWrite, gsheetsCreate,
+  gmailSend,
+} from '../tools/google.js';
 
 export function registerCoreTools(): void {
   registerTool('shell_exec', async (input, sandboxPath) => {
@@ -62,7 +68,7 @@ export function registerCoreTools(): void {
   });
 
   registerTool('github_create_repo', async (input, sandboxPath) => {
-    const { repo_name, description, private: isPrivate = false } = input as {
+    const { repo_name, description, private: isPrivate = true } = input as {
       repo_name: string; description: string; private?: boolean;
     };
     return githubCreateRepo(sandboxPath, repo_name, description, isPrivate);
@@ -102,5 +108,63 @@ export function registerCoreTools(): void {
     return firebaseDeploy(sandboxPath, project_id ?? '', public_dir);
   });
 
-  console.log(`[builder] Registered 16 core tool executors`);
+  // ── Google Workspace ───────────────────────────────────────────────
+
+  registerTool('gdrive_upload', async (input, sandboxPath) => {
+    const { file_path, file_name, folder_id, mime_type } = input as {
+      file_path: string; file_name?: string; folder_id?: string; mime_type?: string;
+    };
+    return gdriveUpload(sandboxPath, file_path, file_name, folder_id, mime_type);
+  });
+
+  registerTool('gdrive_read', async (input, sandboxPath) => {
+    const { file_id, output_path } = input as { file_id: string; output_path: string };
+    return gdriveRead(sandboxPath, file_id, output_path);
+  });
+
+  registerTool('gdrive_list', async (input, _sandboxPath) => {
+    const { folder_id } = input as { folder_id?: string };
+    return gdriveList(folder_id);
+  });
+
+  registerTool('gdocs_create', async (input, _sandboxPath) => {
+    const { title, content } = input as { title: string; content: string };
+    return gdocsCreate(title, content);
+  });
+
+  registerTool('gdocs_read', async (input, _sandboxPath) => {
+    const { document_id } = input as { document_id: string };
+    return gdocsRead(document_id);
+  });
+
+  registerTool('gdocs_append', async (input, _sandboxPath) => {
+    const { document_id, content } = input as { document_id: string; content: string };
+    return gdocsAppend(document_id, content);
+  });
+
+  registerTool('gsheets_read', async (input, _sandboxPath) => {
+    const { spreadsheet_id, range } = input as { spreadsheet_id: string; range?: string };
+    return gsheetsRead(spreadsheet_id, range);
+  });
+
+  registerTool('gsheets_write', async (input, _sandboxPath) => {
+    const { spreadsheet_id, range, values } = input as {
+      spreadsheet_id: string; range: string; values: unknown[][];
+    };
+    return gsheetsWrite(spreadsheet_id, range, values);
+  });
+
+  registerTool('gsheets_create', async (input, _sandboxPath) => {
+    const { title, headers } = input as { title: string; headers?: string[] };
+    return gsheetsCreate(title, headers);
+  });
+
+  registerTool('gmail_send', async (input, _sandboxPath) => {
+    const { to, subject, body, is_html } = input as {
+      to: string; subject: string; body: string; is_html?: boolean;
+    };
+    return gmailSend(to, subject, body, is_html);
+  });
+
+  console.log(`[builder] Registered 26 core tool executors`);
 }

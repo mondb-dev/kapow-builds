@@ -5,29 +5,49 @@ export async function githubCreateRepo(
   sandboxPath: string,
   repoName: string,
   description: string,
-  isPrivate: boolean = false
+  isPrivate: boolean = true
 ): Promise<string> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN env var is not set');
 
   const octokit = new Octokit({ auth: token });
-
-  // Get authenticated user
   const { data: user } = await octokit.users.getAuthenticated();
 
-  // Create the repo
-  const { data: repo } = await octokit.repos.createForAuthenticatedUser({
-    name: repoName,
-    description,
-    private: isPrivate,
-    auto_init: false,
-  });
+  // Try the requested name, then append a short timestamp suffix on conflict
+  const candidates = [
+    repoName,
+    `${repoName}-${Date.now().toString(36)}`,
+  ];
 
-  // Add remote using clean URL (no token embedded)
+  let repo: Awaited<ReturnType<typeof octokit.repos.createForAuthenticatedUser>>['data'] | null = null;
+  let usedName = repoName;
+
+  for (const name of candidates) {
+    try {
+      const { data } = await octokit.repos.createForAuthenticatedUser({
+        name,
+        description,
+        private: isPrivate,
+        auto_init: false,
+      });
+      repo = data;
+      usedName = name;
+      break;
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status;
+      if (status === 422) continue; // name taken — try next candidate
+      throw err;
+    }
+  }
+
+  if (!repo) throw new Error(`Could not create GitHub repo — all candidate names taken: ${candidates.join(', ')}`);
+
   const git = getGit(sandboxPath);
+
+  // Remove existing origin if present (fix attempts may have added it already)
+  try { await git.removeRemote('origin'); } catch { /* not set */ }
   await git.addRemote('origin', repo.clone_url);
 
-  // Authenticate via extraheader config instead of embedding token in URL
   const authHeader =
     'Authorization: Basic ' + Buffer.from('x-access-token:' + token).toString('base64');
   await git.addConfig('http.https://github.com/.extraheader', authHeader);
@@ -35,7 +55,7 @@ export async function githubCreateRepo(
   git.env('GIT_TERMINAL_PROMPT', '0');
   await git.push('origin', 'main', ['--set-upstream']);
 
-  return `Created repo ${user.login}/${repoName} → ${repo.html_url}`;
+  return `Created repo ${user.login}/${usedName} → ${repo.html_url}`;
 }
 
 let gitInstances: Map<string, SimpleGit> = new Map();
