@@ -47,6 +47,9 @@ FROM node:22-alpine
 
 RUN apk add --no-cache git curl bash
 
+# Install deployment CLIs globally
+RUN npm install -g vercel netlify-cli --prefer-offline 2>/dev/null || npm install -g vercel netlify-cli
+
 WORKDIR /app
 
 ARG SERVICE
