@@ -48,7 +48,7 @@ export async function PATCH(
       try {
         const card = await db.card.update({
           where: { id: cardId },
-          data: { status },
+          data: { status: status as never },
         });
         console.error(`[internal/cards/${cardId}] Retried without output — status updated to ${status}`);
         return NextResponse.json(card);

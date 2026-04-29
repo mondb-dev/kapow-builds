@@ -69,9 +69,12 @@ export function registerCoreTools(): void {
 
   registerTool('github_create_repo', async (input, sandboxPath) => {
     const { repo_name, description, private: isPrivate = true } = input as {
-      repo_name: string; description: string; private?: boolean;
+      repo_name?: string; description?: string; private?: boolean;
     };
-    return githubCreateRepo(sandboxPath, repo_name, description, isPrivate);
+    if (!repo_name || repo_name === 'undefined') {
+      throw new Error('github_create_repo requires a repo_name. Specify one explicitly in your tool call.');
+    }
+    return githubCreateRepo(sandboxPath, repo_name, description ?? '', isPrivate);
   });
 
   registerTool('vercel_deploy', async (input, sandboxPath) => {

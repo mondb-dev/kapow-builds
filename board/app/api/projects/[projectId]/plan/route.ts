@@ -135,7 +135,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Store full planner output for pipeline execution
     await db.project.update({
       where: { id: projectId },
-      data: { planData: projectPlan as unknown as Record<string, unknown> },
+      data: { planData: projectPlan as never },
     });
 
     // Update project description with architecture info if available

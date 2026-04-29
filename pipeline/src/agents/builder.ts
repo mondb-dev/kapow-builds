@@ -108,7 +108,8 @@ Your execution rules:
 - Wire entry point → components completely before finishing. The app must run.
 - After writing files, run the project (npm install && npm run build, or npm start briefly) to confirm it works.
 - If it fails, read the error, fix it, re-run. Do not declare success on a broken build.
-- Commit when done.`,
+- Commit when done.
+- REPO NAME: When calling github_create_repo, you MUST provide repo_name explicitly. Check the task description for "named '<name>'" or check project preferences for "GitHub repo name:". Never call github_create_repo without a repo_name.`,
 
   research: `You are the Researcher — a thorough analyst who finds, verifies, and synthesizes information.
 

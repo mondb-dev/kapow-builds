@@ -140,6 +140,8 @@ If the brief combines intents (e.g., "research X then write a report"), use the 
     2. vercel_deploy OR netlify_deploy OR firebase_deploy — publish to a live URL
   The final task MUST produce a live https:// URL. No exceptions. Do not skip this for "demo" or "prototype" projects.
 
+  REPO NAME RULE: If user preferences include "GitHub repo name: <name>", the github_create_repo task description MUST explicitly state: "Create GitHub repo named '<name>'". Use that exact name — do not invent one.
+
 **research** — Plan as investigation: source identification, data gathering, synthesis, output formatting.
   approach = research methodology (web search, document analysis, comparative review).
   structure = output format (report sections, data tables, bibliography).
