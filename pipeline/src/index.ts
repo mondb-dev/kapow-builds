@@ -132,20 +132,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 async function main() {
   // Fail any runs stuck in PLANNING/BUILDING from a previous crashed instance
-  const stuckRuns = await prisma.run.findMany({
-    where: { status: { in: ['PLANNING', 'BUILDING'] } },
-  });
-  if (stuckRuns.length > 0) {
-    await prisma.run.updateMany({
-      where: { id: { in: stuckRuns.map((r) => r.id) } },
-      data: { status: 'FAILED' },
+  try {
+    const stuckRuns = await prisma.run.findMany({
+      where: { status: { in: ['PLANNING', 'BUILDING', 'PENDING', 'QA', 'GATE'] as never[] } },
+      select: { id: true },
     });
-    // Reset conversation phase to idle so users can resume
-    await prisma.conversation.updateMany({
-      where: { runId: { in: stuckRuns.map((r) => r.id) } },
-      data: { phase: 'idle' },
-    });
-    process.stderr.write(`[startup] Marked ${stuckRuns.length} stuck run(s) as FAILED and reset conversations to idle.\n`);
+    if (stuckRuns.length > 0) {
+      const ids = stuckRuns.map((r) => r.id);
+      await prisma.run.updateMany({ where: { id: { in: ids } }, data: { status: 'FAILED' as never } });
+      await prisma.conversation.updateMany({ where: { runId: { in: ids } }, data: { phase: 'idle' } });
+      process.stderr.write(`[startup] Cleaned up ${stuckRuns.length} stuck run(s).\n`);
+    }
+  } catch (err) {
+    process.stderr.write(`[startup] Cleanup error: ${err instanceof Error ? err.message : err}\n`);
   }
 
   // Register output channels from env vars (Telegram, webhook, etc.)
