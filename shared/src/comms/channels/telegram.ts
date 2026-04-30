@@ -315,8 +315,9 @@ export class TelegramChannel implements IOChannel {
         { timeout: this.timeoutMs },
       );
       return res.data?.result?.message_id ?? null;
-    } catch (err) {
-      console.error(`[telegram] Failed to send message:`, err instanceof Error ? err.message : err);
+    } catch (err: unknown) {
+      const body = (err as { response?: { data?: unknown } })?.response?.data;
+      console.error(`[telegram] Failed to send message:`, err instanceof Error ? err.message : err, body ?? '');
       return null;
     }
   }

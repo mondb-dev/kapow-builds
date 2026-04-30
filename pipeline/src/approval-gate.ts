@@ -103,7 +103,7 @@ export async function maybeRequestPlanApproval(args: {
   }
 
   await getCommsBus()?.notify(
-    '✏️ Plan revision requested.\n\nType your specific feedback in the chat, then send:\n<code>/resume N &lt;revised direction&gt;</code>\nto rebuild with your changes.',
+    '✏️ Plan revision requested.\n\nType your feedback and then send /resume N with your new direction to rebuild.',
   ).catch(() => undefined);
   return { approved: false, reason: 'User requested revisions.' };
 }
