@@ -137,7 +137,7 @@ If the brief combines intents (e.g., "research X then write a report"), use the 
 
   DEPLOY RULE: Any web project (website, web app, frontend, landing page) MUST include a final deploy phase with these tasks in order:
     1. github_create_repo — push code to a new GitHub repo
-    2. vercel_deploy OR netlify_deploy OR firebase_deploy — publish to a live URL
+    2. netlify_deploy — publish to a live URL (Netlify is the default deployment platform)
   The final task MUST produce a live https:// URL. No exceptions. Do not skip this for "demo" or "prototype" projects.
 
   REPO NAME RULE: If user preferences include "GitHub repo name: <name>", the github_create_repo task description MUST explicitly state: "Create GitHub repo named '<name>'". Use that exact name — do not invent one.

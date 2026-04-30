@@ -41,18 +41,15 @@ export async function netlifyDeploy(
   siteId?: string,
   publishDir: string = '.'
 ): Promise<string> {
-  const token = process.env.NETLIFY_TOKEN;
-  if (!token) throw new Error('NETLIFY_TOKEN env var is not set');
-
-  const siteFlag = siteId ? `--site ${shellQuote(siteId)}` : '--open';
+  const token = process.env.NETLIFY_AUTH_TOKEN ?? process.env.NETLIFY_TOKEN;
+  if (!token) throw new Error('NETLIFY_AUTH_TOKEN env var is not set');
 
   const cmd = [
-    `npx netlify-cli deploy --prod`,
+    `netlify deploy --prod`,
     `--dir ${shellQuote(publishDir)}`,
-    siteFlag,
-  ].join(' ');
+    siteId ? `--site ${shellQuote(siteId)}` : '',
+  ].filter(Boolean).join(' ');
 
-  // Pass NETLIFY_AUTH_TOKEN via env — Netlify CLI reads it from environment automatically
   const result = await shellExec(cmd, sandboxPath, 180000, { NETLIFY_AUTH_TOKEN: token });
 
   if (result.exitCode !== 0) {
