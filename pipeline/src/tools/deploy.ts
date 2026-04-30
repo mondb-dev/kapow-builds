@@ -61,43 +61,64 @@ export async function netlifyDeploy(
   return match ? `Deployed to Netlify: ${match[1]}` : result.stdout.slice(0, 500);
 }
 
-export async function firebaseDeploy(
+type FirebaseTarget = 'hosting' | 'functions' | 'firestore' | 'storage' | 'all';
+
+async function firebaseDeployCore(
   sandboxPath: string,
   projectId: string,
+  targets: FirebaseTarget[] = ['hosting'],
   publicDir: string = 'dist',
+  functionsRuntime: string = 'nodejs20',
 ): Promise<string> {
-  const serviceAccount = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const gcpProject = projectId || process.env.GOOGLE_CLOUD_PROJECT;
   if (!gcpProject) throw new Error('GOOGLE_CLOUD_PROJECT is required for Firebase deploy');
 
-  // Write a minimal firebase.json if one doesn't exist
+  const onlyFlag = targets.includes('all') ? '' : `--only ${targets.join(',')}`;
+
+  // Write firebase.json if missing, including all requested targets
   const firebaseJson = join(sandboxPath, 'firebase.json');
   if (!existsSync(firebaseJson)) {
-    writeFileSync(firebaseJson, JSON.stringify({
-      hosting: {
+    const config: Record<string, unknown> = {};
+    if (targets.includes('hosting') || targets.includes('all')) {
+      config.hosting = {
         public: publicDir,
         ignore: ['firebase.json', '**/.*', '**/node_modules/**'],
         rewrites: [{ source: '**', destination: '/index.html' }],
-      },
-    }, null, 2));
+      };
+    }
+    if (targets.includes('functions') || targets.includes('all')) {
+      config.functions = [{ source: 'functions', codebase: 'default', runtime: functionsRuntime }];
+    }
+    if (targets.includes('firestore') || targets.includes('all')) {
+      config.firestore = { rules: 'firestore.rules', indexes: 'firestore.indexes.json' };
+    }
+    if (targets.includes('storage') || targets.includes('all')) {
+      config.storage = [{ rules: 'storage.rules' }];
+    }
+    writeFileSync(firebaseJson, JSON.stringify(config, null, 2));
   }
 
-  // Write .firebaserc if not present
   const firebaserc = join(sandboxPath, '.firebaserc');
   if (!existsSync(firebaserc)) {
     writeFileSync(firebaserc, JSON.stringify({ projects: { default: gcpProject } }, null, 2));
   }
 
   const extraEnv: Record<string, string> = {};
-  if (serviceAccount) extraEnv.GOOGLE_APPLICATION_CREDENTIALS = serviceAccount;
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    extraEnv.GOOGLE_APPLICATION_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  }
 
-  // Install firebase-tools locally if needed
   await shellExec('npm install --save-dev firebase-tools', sandboxPath, 60_000, extraEnv);
 
+  // Install functions dependencies if needed
+  if ((targets.includes('functions') || targets.includes('all')) && existsSync(join(sandboxPath, 'functions'))) {
+    await shellExec('cd functions && npm install', sandboxPath, 60_000, extraEnv);
+  }
+
   const result = await shellExec(
-    `npx firebase deploy --only hosting --project ${gcpProject} --non-interactive`,
+    `npx firebase deploy ${onlyFlag} --project ${gcpProject} --non-interactive`,
     sandboxPath,
-    180_000,
+    300_000,
     extraEnv,
   );
 
@@ -105,9 +126,39 @@ export async function firebaseDeploy(
     throw new Error(`Firebase deploy failed:\n${result.stderr || result.stdout}`);
   }
 
-  const match = result.stdout.match(/Hosting URL:\s+(https:\/\/[^\s]+)/);
-  const url = match?.[1] ?? `https://${gcpProject}.web.app`;
-  return `Deployed to Firebase Hosting: ${url}`;
+  const hostingMatch = result.stdout.match(/Hosting URL:\s+(https:\/\/[^\s]+)/);
+  const functionsMatch = result.stdout.match(/Function URL[^:]*:\s+(https:\/\/[^\s]+)/g);
+  const lines: string[] = [];
+  if (hostingMatch) lines.push(`Hosting: ${hostingMatch[1]}`);
+  if (functionsMatch) lines.push(...functionsMatch.map(l => `Function: ${l.split(/\s+/).pop()}`));
+  if (lines.length === 0) lines.push(`Deployed to Firebase (project: ${gcpProject})`);
+  return lines.join('\n');
+}
+
+export async function firebaseDeploy(
+  sandboxPath: string,
+  projectId: string,
+  publicDir: string = 'dist',
+): Promise<string> {
+  return firebaseDeployCore(sandboxPath, projectId, ['hosting'], publicDir);
+}
+
+export async function firebaseFunctionsDeploy(
+  sandboxPath: string,
+  projectId: string,
+  runtime: string = 'nodejs20',
+): Promise<string> {
+  return firebaseDeployCore(sandboxPath, projectId, ['functions'], '.', runtime);
+}
+
+export async function firebaseFullDeploy(
+  sandboxPath: string,
+  projectId: string,
+  targets: FirebaseTarget[],
+  publicDir: string = 'dist',
+  functionsRuntime: string = 'nodejs20',
+): Promise<string> {
+  return firebaseDeployCore(sandboxPath, projectId, targets, publicDir, functionsRuntime);
 }
 
 export async function cloudRunDeploy(

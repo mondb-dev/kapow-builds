@@ -9,7 +9,7 @@ import { shellExec } from '../tools/shell.js';
 import { fileWrite, fileRead, fileList } from '../tools/files.js';
 import { gitInit, gitCommit, gitBranch, gitPush, gitStatus, githubCreateRepo } from '../tools/git.js';
 import { browserNavigate, browserScreenshot, browserSetViewport } from '../tools/browser.js';
-import { vercelDeploy, netlifyDeploy, firebaseDeploy, cloudRunDeploy } from '../tools/deploy.js';
+import { vercelDeploy, netlifyDeploy, firebaseDeploy, firebaseFunctionsDeploy, firebaseFullDeploy, cloudRunDeploy } from '../tools/deploy.js';
 import {
   gdriveUpload, gdriveRead, gdriveList,
   gdocsCreate, gdocsRead, gdocsAppend,
@@ -114,6 +114,21 @@ export function registerCoreTools(): void {
     return firebaseDeploy(sandboxPath, project_id ?? '', public_dir);
   });
 
+  registerTool('firebase_functions_deploy', async (input, sandboxPath) => {
+    const { project_id, runtime } = input as { project_id?: string; runtime?: string };
+    return firebaseFunctionsDeploy(sandboxPath, project_id ?? '', runtime);
+  });
+
+  registerTool('firebase_full_deploy', async (input, sandboxPath) => {
+    const { project_id, targets, public_dir, functions_runtime } = input as {
+      project_id?: string;
+      targets?: ('hosting' | 'functions' | 'firestore' | 'storage' | 'all')[];
+      public_dir?: string;
+      functions_runtime?: string;
+    };
+    return firebaseFullDeploy(sandboxPath, project_id ?? '', targets ?? ['hosting'], public_dir, functions_runtime);
+  });
+
   registerTool('cloud_run_deploy', async (input, sandboxPath) => {
     const { service_name, project_dir = '.', region, port, memory, env_vars } = input as {
       service_name: string;
@@ -184,5 +199,5 @@ export function registerCoreTools(): void {
     return gmailSend(to, subject, body, is_html);
   });
 
-  console.log(`[builder] Registered 27 core tool executors`);
+  console.log(`[builder] Registered 29 core tool executors`);
 }

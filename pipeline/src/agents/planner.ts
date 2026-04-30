@@ -136,10 +136,14 @@ If the brief combines intents (e.g., "research X then write a report"), use the 
 
   DEPLOY RULE: Any web project MUST include a final deploy phase. Choose the right deploy tool:
     - Static/JAMstack (Next.js, React, Vue, plain HTML): github_create_repo → netlify_deploy (default)
+    - Firebase Hosting only (SPA, static): github_create_repo → firebase_deploy
+    - Firebase full-stack (Hosting + Cloud Functions + Firestore): github_create_repo → firebase_full_deploy
+    - Cloud Functions only (API/backend on Firebase): github_create_repo → firebase_functions_deploy
     - Containerized backend (Laravel, Drupal, Django, Express+DB, any Dockerfile-based app): github_create_repo → cloud_run_deploy
   The final task MUST produce a live https:// URL. No exceptions. Do not skip for "demo" or "prototype" projects.
 
-  CLOUD RUN APPS: For PHP/Laravel, Python/Django, any app needing a persistent server or database connection: plan a Dockerfile task before the deploy task. The builder will write the Dockerfile and cloud_run_deploy handles building + deploying it remotely.
+  CLOUD RUN APPS: For PHP/Laravel, Python/Django, any app needing a persistent server: plan a Dockerfile task before the deploy task.
+  FIREBASE APPS: For Firebase full-stack apps, the builder will create a functions/ directory, write Firestore rules, and call firebase_full_deploy with the appropriate targets array.
 
   REPO NAME RULE: If user preferences include "GitHub repo name: <name>", the github_create_repo task description MUST explicitly state: "Create GitHub repo named '<name>'". Use that exact name — do not invent one.
 
