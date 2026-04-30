@@ -109,3 +109,61 @@ export async function firebaseDeploy(
   const url = match?.[1] ?? `https://${gcpProject}.web.app`;
   return `Deployed to Firebase Hosting: ${url}`;
 }
+
+export async function cloudRunDeploy(
+  sandboxPath: string,
+  serviceName: string,
+  projectDir: string = '.',
+  region: string = process.env.GOOGLE_CLOUD_REGION ?? 'asia-southeast1',
+  port: number = 8080,
+  memory: string = '512Mi',
+  envVars?: Record<string, string>,
+): Promise<string> {
+  const gcpProject = process.env.GOOGLE_CLOUD_PROJECT;
+  if (!gcpProject) throw new Error('GOOGLE_CLOUD_PROJECT is required for Cloud Run deploy');
+
+  // Sanitize service name: lowercase, alphanumeric + hyphens, max 63 chars
+  const sanitizedName = serviceName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
+  const imageTag = `${region}-docker.pkg.dev/${gcpProject}/kapow/${sanitizedName}:latest`;
+
+  // Cloud Build submits source remotely — no local Docker required.
+  // On GCP VMs, gcloud auto-authenticates via the instance service account.
+  const buildCmd = [
+    `gcloud builds submit ${shellQuote(projectDir)}`,
+    `--tag ${shellQuote(imageTag)}`,
+    `--project ${shellQuote(gcpProject)}`,
+    `--quiet`,
+  ].join(' ');
+
+  const buildResult = await shellExec(buildCmd, sandboxPath, 600_000);
+  if (buildResult.exitCode !== 0) {
+    throw new Error(`Cloud Build failed:\n${buildResult.stderr || buildResult.stdout}`);
+  }
+
+  // Build env-vars flag
+  const envFlag = envVars && Object.keys(envVars).length > 0
+    ? `--set-env-vars ${shellQuote(Object.entries(envVars).map(([k, v]) => `${k}=${v}`).join(','))}`
+    : '';
+
+  const deployCmd = [
+    `gcloud run deploy ${shellQuote(sanitizedName)}`,
+    `--image ${shellQuote(imageTag)}`,
+    `--platform managed`,
+    `--region ${shellQuote(region)}`,
+    `--allow-unauthenticated`,
+    `--port ${port}`,
+    `--memory ${shellQuote(memory)}`,
+    `--project ${shellQuote(gcpProject)}`,
+    `--quiet`,
+    envFlag,
+  ].filter(Boolean).join(' ');
+
+  const deployResult = await shellExec(deployCmd, sandboxPath, 300_000);
+  if (deployResult.exitCode !== 0) {
+    throw new Error(`Cloud Run deploy failed:\n${deployResult.stderr || deployResult.stdout}`);
+  }
+
+  const urlMatch = deployResult.stdout.match(/Service URL:\s+(https:\/\/[^\s]+)/);
+  const url = urlMatch?.[1] ?? '';
+  return url ? `Deployed to Cloud Run: ${url}` : deployResult.stdout.slice(0, 500);
+}

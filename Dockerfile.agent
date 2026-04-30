@@ -45,10 +45,19 @@ RUN cd ${SERVICE} && npx tsc
 # ── Stage 2: Runtime ──────────────────────────────────────────────────
 FROM node:22-alpine
 
-RUN apk add --no-cache git curl bash
+RUN apk add --no-cache git curl bash python3
 
 # Install deployment CLIs globally
 RUN npm install -g vercel netlify-cli --prefer-offline 2>/dev/null || npm install -g vercel netlify-cli
+
+# Install Google Cloud CLI (enables cloud_run_deploy via gcloud builds submit + gcloud run deploy)
+RUN curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz" -o /tmp/gcloud.tar.gz && \
+    tar xzf /tmp/gcloud.tar.gz -C /usr/local/lib && \
+    rm /tmp/gcloud.tar.gz && \
+    ln -s /usr/local/lib/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud && \
+    ln -s /usr/local/lib/google-cloud-sdk/bin/docker-credential-gcloud /usr/local/bin/docker-credential-gcloud && \
+    gcloud config set core/disable_usage_reporting true --installation && \
+    gcloud config set component_manager/disable_update_check true --installation
 
 WORKDIR /app
 

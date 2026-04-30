@@ -9,7 +9,7 @@ import { shellExec } from '../tools/shell.js';
 import { fileWrite, fileRead, fileList } from '../tools/files.js';
 import { gitInit, gitCommit, gitBranch, gitPush, gitStatus, githubCreateRepo } from '../tools/git.js';
 import { browserNavigate, browserScreenshot, browserSetViewport } from '../tools/browser.js';
-import { vercelDeploy, netlifyDeploy, firebaseDeploy } from '../tools/deploy.js';
+import { vercelDeploy, netlifyDeploy, firebaseDeploy, cloudRunDeploy } from '../tools/deploy.js';
 import {
   gdriveUpload, gdriveRead, gdriveList,
   gdocsCreate, gdocsRead, gdocsAppend,
@@ -114,6 +114,18 @@ export function registerCoreTools(): void {
     return firebaseDeploy(sandboxPath, project_id ?? '', public_dir);
   });
 
+  registerTool('cloud_run_deploy', async (input, sandboxPath) => {
+    const { service_name, project_dir = '.', region, port, memory, env_vars } = input as {
+      service_name: string;
+      project_dir?: string;
+      region?: string;
+      port?: number;
+      memory?: string;
+      env_vars?: Record<string, string>;
+    };
+    return cloudRunDeploy(sandboxPath, service_name, project_dir, region, port, memory, env_vars);
+  });
+
   // ── Google Workspace ───────────────────────────────────────────────
 
   registerTool('gdrive_upload', async (input, sandboxPath) => {
@@ -172,5 +184,5 @@ export function registerCoreTools(): void {
     return gmailSend(to, subject, body, is_html);
   });
 
-  console.log(`[builder] Registered 26 core tool executors`);
+  console.log(`[builder] Registered 27 core tool executors`);
 }

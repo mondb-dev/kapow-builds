@@ -130,15 +130,16 @@ If the brief combines intents (e.g., "research X then write a report"), use the 
 **development** — Plan as software: architecture, implementation tasks, integration.
   approach = tech stack and frameworks. structure = file/directory layout. conventions = coding patterns.
 
-  RUNTIME CONSTRAINT: The execution environment has Node.js, Python 3, and standard Unix tools available.
-  It does NOT have: Flutter, Dart, Ruby, Java, Kotlin, Swift, .NET, Go, Rust, PHP, or any mobile SDK.
-  For web projects, use: React, Vue, plain HTML/CSS/JS, or any Node.js framework.
-  Do NOT plan work that requires an unavailable runtime — the build will fail.
+  RUNTIME CONSTRAINT: The sandbox has Node.js, Python 3, and standard Unix tools available for running code locally.
+  It does NOT have: Flutter, Dart, Ruby, Java, Kotlin, Swift, .NET, Go, Rust, PHP, or any mobile SDK locally.
+  However, ANY language or framework can be deployed via cloud_run_deploy (builds remotely via Cloud Build — no local runtime needed).
 
-  DEPLOY RULE: Any web project (website, web app, frontend, landing page) MUST include a final deploy phase with these tasks in order:
-    1. github_create_repo — push code to a new GitHub repo
-    2. netlify_deploy — publish to a live URL (Netlify is the default deployment platform)
-  The final task MUST produce a live https:// URL. No exceptions. Do not skip this for "demo" or "prototype" projects.
+  DEPLOY RULE: Any web project MUST include a final deploy phase. Choose the right deploy tool:
+    - Static/JAMstack (Next.js, React, Vue, plain HTML): github_create_repo → netlify_deploy (default)
+    - Containerized backend (Laravel, Drupal, Django, Express+DB, any Dockerfile-based app): github_create_repo → cloud_run_deploy
+  The final task MUST produce a live https:// URL. No exceptions. Do not skip for "demo" or "prototype" projects.
+
+  CLOUD RUN APPS: For PHP/Laravel, Python/Django, any app needing a persistent server or database connection: plan a Dockerfile task before the deploy task. The builder will write the Dockerfile and cloud_run_deploy handles building + deploying it remotely.
 
   REPO NAME RULE: If user preferences include "GitHub repo name: <name>", the github_create_repo task description MUST explicitly state: "Create GitHub repo named '<name>'". Use that exact name — do not invent one.
 

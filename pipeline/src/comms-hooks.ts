@@ -79,7 +79,7 @@ export function createOrchestratorHooks(): OrchestratorHooks {
     },
 
     async resumeProject({ projectId: indexStr, direction, conversationId, requestedBy }) {
-      const index = parseInt(indexStr, 10);
+      const index = parseInt(indexStr, 10) - 1; // list is 1-based, array is 0-based
       const projects = await prisma.project.findMany({
         orderBy: { updatedAt: 'desc' },
         take: 20,
@@ -93,7 +93,7 @@ export function createOrchestratorHooks(): OrchestratorHooks {
       });
 
       const project = projects[index];
-      if (!project) throw new Error(`No project at position ${index + 1}. Use /projects to see the list.`);
+      if (!project) throw new Error(`No project at position ${index + 1}. Use /projects to see the list.`); // index is 0-based here
 
       const lastRun = project.runs[0];
       const arch = lastRun?.planData as { architecture?: { approach?: string; structure?: string; conventions?: string } } | null;
