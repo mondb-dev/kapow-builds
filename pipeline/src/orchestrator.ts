@@ -390,8 +390,26 @@ export async function runPipeline(
     onProgress(`[${runId}] Tasks created (${comms.channelCount} channel${comms.channelCount === 1 ? '' : 's'}).`);
   }
 
-  // ── Plan approval gate (no-op for board-initiated runs) ─────────
-  const approval = await maybeRequestPlanApproval({ runId, plan: projectPlan });
+  // ── Plan approval gate (loops up to 3 revision rounds) ────────────
+  const MAX_REVISIONS = 3;
+  let approval = await maybeRequestPlanApproval({ runId, plan: projectPlan });
+
+  for (let rev = 0; !approval.approved && approval.revisionNotes && rev < MAX_REVISIONS; rev++) {
+    onProgress(`[${runId}] Replanning with revision feedback (round ${rev + 1})…`);
+    const revisedPrefs = `${preferencesText}\n\nUser revision feedback:\n${approval.revisionNotes}`;
+    try {
+      projectPlan = await createProjectPlan(runId, plan, recipesText || undefined, revisedPrefs);
+      const totalTasks = projectPlan.phases.reduce((sum, p) => sum + p.tasks.length, 0);
+      onProgress(`[${runId}] Revised plan ready. ${projectPlan.phases.length} phases, ${totalTasks} tasks.`);
+    } catch (err) {
+      const msg = errMsg(err);
+      onProgress(`[${runId}] Replanner failed: ${msg}`);
+      updateRunStatus(runId, 'failed', { diagnosis: `Replanner failed: ${msg}` }).catch(() => {});
+      return { success: false, diagnosis: `Replanner failed: ${msg}` };
+    }
+    approval = await maybeRequestPlanApproval({ runId, plan: projectPlan });
+  }
+
   if (!approval.approved) {
     onProgress(`[${runId}] Plan not approved: ${approval.reason}`);
     updateRunStatus(runId, 'failed', { diagnosis: approval.reason }).catch(() => {});

@@ -23,6 +23,7 @@ export interface SprintTaskResult {
 export interface PlanApprovalOutcome {
   approved: boolean;
   reason: string;
+  revisionNotes?: string; // present when user clicked Revise with typed feedback
 }
 
 /**
@@ -54,37 +55,56 @@ export async function maybeRequestPlanApproval(args: {
     },
   });
 
-  // Persist the decision on the conversation row (Approval table is a follow-up).
-  if (reply.status === 'answered') {
-    await prisma.conversation.update({
-      where: { id: conv.id },
-      data: {
-        phase: reply.choice === 'approve' ? 'building' : 'failed',
-        messages: {
-          push: {
-            role: 'system',
-            text: `plan_approval=${reply.choice} by ${reply.userName}`,
-            at: reply.receivedAt.toISOString(),
-          } as never,
-        },
-      },
-    }).catch(() => undefined);
-  }
-
   if (reply.status === 'expired') {
     return { approved: false, reason: 'Approval timed out.' };
   }
   if (reply.status === 'cancelled') {
     return { approved: false, reason: 'Run cancelled during approval.' };
   }
+
+  const newPhase = reply.choice === 'approve' ? 'building' : 'idle';
+  await prisma.conversation.update({
+    where: { id: conv.id },
+    data: {
+      phase: newPhase,
+      messages: {
+        push: {
+          role: 'system',
+          text: `plan_approval=${reply.choice} by ${reply.userName}`,
+          at: reply.receivedAt.toISOString(),
+        } as never,
+      },
+    },
+  }).catch(() => undefined);
+
   if (reply.choice === 'approve') {
     return { approved: true, reason: 'approved' };
   }
+
   if (reply.choice === 'cancel') {
     stopRun(args.runId, 'User cancelled at plan approval.');
+    await getCommsBus()?.notify('🛑 Cancelled. Type /new to start a new project.').catch(() => undefined);
     return { approved: false, reason: 'User cancelled.' };
   }
-  // 'revise' or anything else
+
+  // 'revise' — read any feedback the user typed before clicking the button
+  const freshConv = await prisma.conversation.findUnique({ where: { id: conv.id } });
+  type ConvMsg = { role: string; text: string; at: string };
+  const stored = (freshConv?.messages ?? []) as ConvMsg[];
+  const revisionNotes = stored
+    .filter((m) => m.role === 'user')
+    .map((m) => m.text)
+    .join('\n')
+    .trim();
+
+  if (revisionNotes) {
+    await getCommsBus()?.notify('✏️ Got your feedback — replanning now…').catch(() => undefined);
+    return { approved: false, reason: 'User requested revisions.', revisionNotes };
+  }
+
+  await getCommsBus()?.notify(
+    '✏️ Plan revision requested.\n\nType your specific feedback in the chat, then send:\n<code>/resume N &lt;revised direction&gt;</code>\nto rebuild with your changes.',
+  ).catch(() => undefined);
   return { approved: false, reason: 'User requested revisions.' };
 }
 
