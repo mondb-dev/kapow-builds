@@ -109,6 +109,9 @@ export class CommsBus {
         });
         return;
       }
+      // Stale button click — no pending prompt (e.g. after a server restart)
+      await this.notify('⚠️ This approval prompt has expired (server restarted). Use /resume to restart the run.').catch(() => undefined);
+      return;
     }
     // Otherwise route to the registered inbound handler
     if (this.inboundHandler) {

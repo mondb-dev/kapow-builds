@@ -21,6 +21,7 @@ import { CommsRouter } from './comms-router.js';
 import { createOrchestratorHooks } from './comms-hooks.js';
 import { createHttpServer } from './http.js';
 import { ensureRun, addRunLog } from 'kapow-db/runs';
+import { prisma } from 'kapow-db';
 import type { PipelineResult } from 'kapow-shared';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
@@ -130,6 +131,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // ── Start ────────────────────────────────────────────────────────────
 
 async function main() {
+  // Fail any runs stuck in PLANNING/BUILDING from a previous crashed instance
+  const stuckRuns = await prisma.run.findMany({
+    where: { status: { in: ['PLANNING', 'BUILDING'] } },
+  });
+  if (stuckRuns.length > 0) {
+    await prisma.run.updateMany({
+      where: { id: { in: stuckRuns.map((r) => r.id) } },
+      data: { status: 'FAILED' },
+    });
+    // Reset conversation phase to idle so users can resume
+    await prisma.conversation.updateMany({
+      where: { runId: { in: stuckRuns.map((r) => r.id) } },
+      data: { phase: 'idle' },
+    });
+    process.stderr.write(`[startup] Marked ${stuckRuns.length} stuck run(s) as FAILED and reset conversations to idle.\n`);
+  }
+
   // Register output channels from env vars (Telegram, webhook, etc.)
   registerChannelsFromEnv();
   await getCommsBus().init();
