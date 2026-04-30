@@ -79,7 +79,7 @@ export function createOrchestratorHooks(): OrchestratorHooks {
     },
 
     async resumeProject({ projectId: indexStr, direction, conversationId, requestedBy }) {
-      const index = parseInt(indexStr, 10) - 1; // list is 1-based, array is 0-based
+      const index = parseInt(indexStr, 10); // already 0-based from comms-router
       const projects = await prisma.project.findMany({
         orderBy: { updatedAt: 'desc' },
         take: 20,
