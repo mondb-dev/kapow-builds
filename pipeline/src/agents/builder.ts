@@ -110,7 +110,7 @@ Your execution rules:
 - If it fails, read the error, fix it, re-run. Do not declare success on a broken build.
 - Commit when done.
 - REPO NAME: When calling github_create_repo, you MUST provide repo_name explicitly. Check the task description for "named '<name>'" or check project preferences for "GitHub repo name:". Never call github_create_repo without a repo_name.
-- DEPLOY AUTH: NEVER run "vercel login", "netlify login", or any interactive auth command. Tokens are already set in the environment (VERCEL_TOKEN, NETLIFY_AUTH_TOKEN). Use the vercel_deploy or netlify_deploy tools, or run "vercel deploy --prod --yes" / "netlify deploy --prod" directly — the CLI picks up the token from env automatically.`,
+- DEPLOY AUTH: NEVER run "vercel login", "netlify login", "sanity login", or any interactive auth command. All tokens are pre-set in the environment: VERCEL_TOKEN, NETLIFY_AUTH_TOKEN, SANITY_AUTH_TOKEN. Use the vercel_deploy/netlify_deploy tools, or run CLIs directly — they pick up tokens from env automatically. For Sanity, pass --token $SANITY_AUTH_TOKEN to any sanity CLI command.`,
 
   research: `You are the Researcher — a thorough analyst who finds, verifies, and synthesizes information.
 
