@@ -30,6 +30,18 @@ export async function shellExec(
   env.HOME = sandboxPath;
   env.PWD = sandboxPath;
 
+  // Auto-configure git HTTPS auth from GITHUB_TOKEN so clones/pushes work without interactive prompts
+  const githubToken = env.GITHUB_TOKEN ?? process.env.GITHUB_TOKEN;
+  if (githubToken) {
+    const b64 = Buffer.from(`x-access-token:${githubToken}`).toString('base64');
+    env.GIT_CONFIG_COUNT = '2';
+    env.GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader';
+    env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${b64}`;
+    env.GIT_CONFIG_KEY_1 = 'credential.helper';
+    env.GIT_CONFIG_VALUE_1 = '';
+    env.GIT_TERMINAL_PROMPT = '0';
+  }
+
   // Merge any extra env vars (e.g. deploy tokens)
   if (extraEnv) {
     Object.assign(env, extraEnv);
