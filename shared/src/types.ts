@@ -72,6 +72,14 @@ export interface TaskBuildResult {
   success: boolean;
 }
 
+export interface ProjectMeta {
+  repoUrl?: string | null;
+  deployUrl?: string | null;
+  deployTarget?: string | null;
+  netlifySiteId?: string | null;
+  cloudRunService?: string | null;
+}
+
 export interface TaskBuildRequest {
   runId: string;
   task: Task;
@@ -85,6 +93,7 @@ export interface TaskBuildRequest {
   isAgile?: boolean;
   sprintIndex?: number;
   totalSprints?: number;
+  projectMeta?: ProjectMeta;
 }
 
 export interface TaskFixRequest {
@@ -97,6 +106,7 @@ export interface TaskFixRequest {
   delta: string;
   qaIssues?: Issue[];
   iteration: number;
+  projectMeta?: ProjectMeta;
 }
 
 // ── QA ───────────────────────────────────────────────────────────────

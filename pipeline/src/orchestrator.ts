@@ -230,6 +230,15 @@ export async function runPipeline(
     });
   }
 
+  // Load existing project infrastructure once — passed to every buildTask/fixTask
+  // so the builder can never hallucinate repo URLs, site IDs, or service names.
+  const projectMeta = projectId
+    ? await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { repoUrl: true, deployUrl: true, deployTarget: true, netlifySiteId: true, cloudRunService: true },
+      }).catch(() => null)
+    : null;
+
   // ── Step 0: Load recipes, preferences, tools ────────────────────
   const scoredRecipes: ScoredRecipe[] = projectId
     ? (await getProjectRecipes(projectId)).map((r) => ({ ...r, similarity: 0.5 }))
@@ -472,6 +481,7 @@ export async function runPipeline(
             isAgile: isAgileMode,
             sprintIndex: phaseIndex,
             totalSprints: sortedPhases.length,
+            projectMeta: projectMeta ?? undefined,
           });
           sandboxPath = buildResult.sandboxPath;
           allBuildLogs.push(...buildResult.logs);
@@ -605,6 +615,7 @@ export async function runPipeline(
               delta: gateResult.delta ?? '',
               qaIssues: qaResult.issues,
               iteration,
+              projectMeta: projectMeta ?? undefined,
             });
             onProgress(`[${runId}] Task ${task.id} fix complete.`);
           } catch (err) {
@@ -719,12 +730,28 @@ export async function runPipeline(
       .map((m) => m![1])
       .pop();
 
-    // Persist URLs on the project for future resume
+    // Detect deploy target & service identifiers from logs
+    const deployTarget = allBuildLogs.find((l) => /Deployed to Cloud Run/i.test(l)) ? 'cloud_run'
+      : allBuildLogs.find((l) => /Deployed to Netlify/i.test(l)) ? 'netlify'
+      : allBuildLogs.find((l) => /Deployed to Firebase/i.test(l)) ? 'firebase'
+      : allBuildLogs.find((l) => /Deployed to Vercel/i.test(l)) ? 'vercel'
+      : null;
+
+    // Cloud Run service URL has format: https://<service>-<num>.<region>.run.app
+    const cloudRunService = deployUrl?.match(/https:\/\/([a-z0-9-]+?)(?:-\d+)?\.[^.]+\.run\.app/i)?.[1] ?? null;
+    // Netlify site URL: https://<sitename>.netlify.app — capture sitename for re-deploys
+    const netlifyHost = deployUrl?.match(/https:\/\/([a-z0-9-]+)\.netlify\.app/i)?.[1] ?? null;
+
+    // Persist URLs and infrastructure metadata for future resume
     if (projectId && (repoUrl || deployUrl)) {
       prisma.project.update({
         where: { id: projectId },
         data: {
           ...(repoUrl ? { repoUrl } : {}),
+          ...(deployUrl ? { deployUrl } : {}),
+          ...(deployTarget ? { deployTarget } : {}),
+          ...(cloudRunService ? { cloudRunService } : {}),
+          ...(netlifyHost ? { netlifySiteId: netlifyHost } : {}),
           planData: projectPlan as never,
         },
       }).catch(() => {});

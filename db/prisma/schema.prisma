@@ -205,6 +205,10 @@ model Project {
   description String?
   planData    Json?            // Full planner output (preserved for pipeline execution)
   repoUrl     String?
+  deployUrl   String?          // Live URL of the latest successful deployment
+  deployTarget String?         // 'netlify' | 'cloud_run' | 'firebase' | 'vercel'
+  netlifySiteId String?        // Netlify site ID for incremental deploys
+  cloudRunService String?      // Cloud Run service name for incremental deploys
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

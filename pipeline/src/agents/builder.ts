@@ -255,7 +255,7 @@ const FIX_INSTRUCTIONS: Record<TaskIntent, string> = {
 
 // ── Build system prompt with dynamic tool docs ───────────────────────
 
-function buildSystemPrompt(intent: TaskIntent, architecture: ProjectContext, availableTools: AvailableTool[]): string {
+function buildSystemPrompt(intent: TaskIntent, architecture: ProjectContext, availableTools: AvailableTool[], projectMeta?: { repoUrl?: string | null; deployUrl?: string | null; deployTarget?: string | null; netlifySiteId?: string | null; cloudRunService?: string | null }): string {
   // Format tool documentation from the registry
   const toolDocs = availableTools.length > 0
     ? availableTools.map((t) => {
@@ -286,10 +286,25 @@ function buildSystemPrompt(intent: TaskIntent, architecture: ProjectContext, ava
     `Notes: ${architecture.notes ?? ''}`,
   ].join('\n'));
 
+  // Existing infrastructure block (highest priority — prevents builder from
+  // hallucinating repo URLs, deploy targets, or site IDs across resume sessions)
+  const infraLines: string[] = [];
+  if (projectMeta?.repoUrl) {
+    infraLines.push(`GitHub repository: ${projectMeta.repoUrl}`);
+    infraLines.push(`  → DO NOT call github_create_repo. Clone or pull this exact URL. Never invent a different owner or repo name.`);
+  }
+  if (projectMeta?.deployUrl) infraLines.push(`Live deployment: ${projectMeta.deployUrl}`);
+  if (projectMeta?.deployTarget) infraLines.push(`Deploy target: ${projectMeta.deployTarget}`);
+  if (projectMeta?.netlifySiteId) infraLines.push(`Netlify site_id (REQUIRED for netlify_deploy): ${projectMeta.netlifySiteId}`);
+  if (projectMeta?.cloudRunService) infraLines.push(`Cloud Run service_name (REQUIRED for cloud_run_deploy): ${projectMeta.cloudRunService}`);
+  const infraBlock = infraLines.length > 0
+    ? `\n=== EXISTING PROJECT INFRASTRUCTURE (use these exact values) ===\n${infraLines.join('\n')}\n=== END INFRASTRUCTURE ===\n`
+    : '';
+
   return `${intentPrompt}
 
 You produce exactly what was asked for — nothing more.
-
+${infraBlock}
 === PROJECT CONTEXT ===
 ${archBlock}
 === END CONTEXT ===
@@ -713,7 +728,7 @@ export async function buildTask(req: TaskBuildRequest): Promise<TaskBuildResult>
 
   logs.push(`Initial tools (${taskIntent}): ${initialTools.map((t) => t.name).join(', ')}`);
 
-  const systemPrompt = buildSystemPrompt(taskIntent, req.architecture, initialTools);
+  const systemPrompt = buildSystemPrompt(taskIntent, req.architecture, initialTools, req.projectMeta);
   let claudeTools = buildClaudeTools(initialTools);
 
   // Add discover_tools meta-tool if there are extra tools available
@@ -785,7 +800,7 @@ export async function fixTask(req: TaskFixRequest): Promise<TaskBuildResult> {
   const allTools = getDefaultTools();
   const taskToolSet = TOOLS_BY_INTENT[taskIntent] ?? TOOLS_BY_TYPE[req.task.type] ?? TOOLS_BY_TYPE.code;
   const availableTools = allTools.filter((t) => taskToolSet.has(t.name));
-  const systemPrompt = buildSystemPrompt(taskIntent, req.architecture, availableTools);
+  const systemPrompt = buildSystemPrompt(taskIntent, req.architecture, availableTools, req.projectMeta);
   const claudeTools = buildClaudeTools(availableTools);
 
   // Format QA issues with severity and file paths (each issue wrapped to neutralize injection)
