@@ -6,6 +6,36 @@ function shellQuote(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
+/**
+ * Pull the actionable error out of a multi-megabyte gcloud builds log.
+ * The real error is usually buried near the end after "ERROR" or in a
+ * "returned a non-zero code" line. Returning the whole log overwhelms
+ * the LLM and it just says "build failed" without identifying root cause.
+ */
+function extractBuildError(stdout: string, stderr: string): string {
+  const all = (stdout + '\n' + stderr).split('\n');
+  // Look for known error signatures, prefer the most specific
+  const patterns = [
+    /Node\.js version[^\n]+/i,
+    /required engine[^\n]+/i,
+    /Cannot find module[^\n]+/i,
+    /Module not found[^\n]+/i,
+    /returned a non-zero code:[^\n]*\n?[^\n]+/i,
+    /(?:^|\n)ERROR:?\s*([^\n]+)/i,
+    /failed: step exited[^\n]+/i,
+    /(?:gcloud|gsutil)\.[a-z.]+\)\s+([^\n]+)/i,
+  ];
+  for (const pat of patterns) {
+    for (const line of all) {
+      const m = line.match(pat);
+      if (m) return line.trim().slice(0, 500);
+    }
+  }
+  // Fallback: last 500 chars of stderr or stdout
+  const fallback = (stderr || stdout).trim();
+  return fallback.slice(-500);
+}
+
 export async function vercelDeploy(
   sandboxPath: string,
   projectName: string,
@@ -188,7 +218,7 @@ export async function cloudRunDeploy(
 
   const buildResult = await shellExec(buildCmd, sandboxPath, 600_000);
   if (buildResult.exitCode !== 0) {
-    throw new Error(`Cloud Build failed:\n${buildResult.stderr || buildResult.stdout}`);
+    throw new Error(`Cloud Build failed: ${extractBuildError(buildResult.stdout, buildResult.stderr)}`);
   }
 
   // Build env-vars flag
