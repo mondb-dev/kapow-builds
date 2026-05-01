@@ -18,6 +18,20 @@ import type { OrchestratorHooks } from './comms-router.js';
 export function createOrchestratorHooks(): OrchestratorHooks {
   return {
     async startProject({ brief, conversationId, requestedBy, preferences }) {
+      // Dedup: if this conversation already has an active run started in the
+      // last 60s (Telegram redelivery on restart), return it instead of spawning again.
+      const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+      if (conv?.runId) {
+        const existing = await prisma.run.findUnique({ where: { id: conv.runId } });
+        if (existing && ['PENDING','PLANNING','BUILDING','QA','GATE'].includes(existing.status)) {
+          const age = Date.now() - existing.createdAt.getTime();
+          if (age < 60_000) {
+            console.log(`[hooks] Dedup startProject: returning existing run ${existing.id}`);
+            return { projectId: existing.projectId, runId: existing.id };
+          }
+        }
+      }
+
       // Create a Project + Run; runPipeline owns planning and beyond.
       const project = await prisma.project.create({
         data: {
@@ -97,7 +111,21 @@ export function createOrchestratorHooks(): OrchestratorHooks {
       });
 
       const project = projects[index];
-      if (!project) throw new Error(`No project at position ${index + 1}. Use /projects to see the list.`); // index is 0-based here
+      if (!project) throw new Error(`No project at position ${index + 1}. Use /projects to see the list.`);
+
+      // Dedup: if this project already has an active run from the last 60s, return it.
+      const activeRun = await prisma.run.findFirst({
+        where: {
+          projectId: project.id,
+          status: { in: ['PENDING', 'PLANNING', 'BUILDING', 'QA', 'GATE'] },
+          createdAt: { gte: new Date(Date.now() - 60_000) },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (activeRun) {
+        console.log(`[hooks] Dedup resumeProject: returning existing run ${activeRun.id}`);
+        return { projectId: project.id, runId: activeRun.id };
+      }
 
       const lastRun = project.runs[0];
       const arch = lastRun?.planData as { architecture?: { approach?: string; structure?: string; conventions?: string } } | null;
