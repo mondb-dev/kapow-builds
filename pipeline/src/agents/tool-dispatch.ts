@@ -103,6 +103,18 @@ export function setCurrentRunId(runId: string): void {
   currentRunId = runId;
 }
 
+// Track current projectId for infra recording
+let currentProjectId: string | undefined;
+export function setCurrentProjectId(projectId: string | undefined): void {
+  currentProjectId = projectId;
+}
+export function getCurrentProjectId(): string | undefined {
+  return currentProjectId;
+}
+export function getCurrentRunId(): string {
+  return currentRunId;
+}
+
 let onRepoCreatedHook: ((repoUrl: string) => void) | undefined;
 export function setOnRepoCreated(fn: (repoUrl: string) => void): void {
   onRepoCreatedHook = fn;

@@ -4,7 +4,7 @@
  * Registers all built-in tool executors on startup.
  * This replaces the switch statement in builder.ts.
  */
-import { registerTool, getOnRepoCreated } from './tool-dispatch.js';
+import { registerTool, getOnRepoCreated, getCurrentProjectId, getCurrentRunId } from './tool-dispatch.js';
 import { shellExec } from '../tools/shell.js';
 import { fileWrite, fileRead, fileList } from '../tools/files.js';
 import { gitInit, gitCommit, gitBranch, gitPush, gitStatus, githubCreateRepo } from '../tools/git.js';
@@ -74,7 +74,7 @@ export function registerCoreTools(): void {
     if (!repo_name || repo_name === 'undefined') {
       throw new Error('github_create_repo requires a repo_name. Specify one explicitly in your tool call.');
     }
-    const result = await githubCreateRepo(sandboxPath, repo_name, description ?? '', isPrivate);
+    const result = await githubCreateRepo(sandboxPath, repo_name, description ?? '', isPrivate, getCurrentProjectId(), getCurrentRunId());
     const urlMatch = result.match(/https:\/\/github\.com\/\S+/);
     if (urlMatch) getOnRepoCreated()?.(urlMatch[0]);
     return result;
@@ -84,14 +84,14 @@ export function registerCoreTools(): void {
     const { project_name, build_command, output_dir } = input as {
       project_name: string; build_command?: string; output_dir?: string;
     };
-    return vercelDeploy(sandboxPath, project_name, build_command, output_dir);
+    return vercelDeploy(sandboxPath, project_name, build_command, output_dir, getCurrentProjectId(), getCurrentRunId());
   });
 
   registerTool('netlify_deploy', async (input, sandboxPath) => {
     const { site_id, publish_dir = '.' } = input as {
       site_id?: string; publish_dir?: string;
     };
-    return netlifyDeploy(sandboxPath, site_id, publish_dir);
+    return netlifyDeploy(sandboxPath, site_id, publish_dir, undefined, getCurrentProjectId(), getCurrentRunId());
   });
 
   registerTool('browser_navigate', async (input, sandboxPath) => {
@@ -111,12 +111,12 @@ export function registerCoreTools(): void {
 
   registerTool('firebase_deploy', async (input, sandboxPath) => {
     const { project_id, public_dir } = input as { project_id?: string; public_dir?: string };
-    return firebaseDeploy(sandboxPath, project_id ?? '', public_dir);
+    return firebaseDeploy(sandboxPath, project_id ?? '', public_dir, getCurrentProjectId(), getCurrentRunId());
   });
 
   registerTool('firebase_functions_deploy', async (input, sandboxPath) => {
     const { project_id, runtime } = input as { project_id?: string; runtime?: string };
-    return firebaseFunctionsDeploy(sandboxPath, project_id ?? '', runtime);
+    return firebaseFunctionsDeploy(sandboxPath, project_id ?? '', runtime, getCurrentProjectId(), getCurrentRunId());
   });
 
   registerTool('firebase_full_deploy', async (input, sandboxPath) => {
@@ -126,7 +126,7 @@ export function registerCoreTools(): void {
       public_dir?: string;
       functions_runtime?: string;
     };
-    return firebaseFullDeploy(sandboxPath, project_id ?? '', targets ?? ['hosting'], public_dir, functions_runtime);
+    return firebaseFullDeploy(sandboxPath, project_id ?? '', targets ?? ['hosting'], public_dir, functions_runtime, getCurrentProjectId(), getCurrentRunId());
   });
 
   registerTool('cloud_run_deploy', async (input, sandboxPath) => {
@@ -138,7 +138,7 @@ export function registerCoreTools(): void {
       memory?: string;
       env_vars?: Record<string, string>;
     };
-    return cloudRunDeploy(sandboxPath, service_name, project_dir, region, port, memory, env_vars);
+    return cloudRunDeploy(sandboxPath, service_name, project_dir, region, port, memory, env_vars, getCurrentProjectId(), getCurrentRunId());
   });
 
   // ── Google Workspace ───────────────────────────────────────────────
