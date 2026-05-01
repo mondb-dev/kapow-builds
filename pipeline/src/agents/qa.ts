@@ -140,7 +140,7 @@ ${buildUntrustedPreamble()}`;
 }
 
 /** QA only gets read-only tools — filter from registry */
-const QA_ALLOWED_TOOLS = new Set(['shell_exec', 'file_read', 'file_list', 'browser_navigate', 'browser_screenshot', 'browser_set_viewport']);
+const QA_ALLOWED_TOOLS = new Set(['shell_exec', 'file_read', 'file_list', 'browser_navigate', 'browser_screenshot', 'browser_set_viewport', 'google_search']);
 
 function getDefaultQATools(): AvailableTool[] {
   return [

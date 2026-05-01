@@ -5,10 +5,12 @@
  * This replaces the switch statement in builder.ts.
  */
 import { registerTool, getOnRepoCreated, getCurrentProjectId, getCurrentRunId } from './tool-dispatch.js';
+import { prisma } from 'kapow-db';
 import { shellExec } from '../tools/shell.js';
 import { fileWrite, fileRead, fileList } from '../tools/files.js';
 import { gitInit, gitCommit, gitBranch, gitPush, gitStatus, githubCreateRepo } from '../tools/git.js';
 import { browserNavigate, browserScreenshot, browserSetViewport } from '../tools/browser.js';
+import { googleSearch } from '../tools/search.js';
 import { vercelDeploy, netlifyDeploy, firebaseDeploy, firebaseFunctionsDeploy, firebaseFullDeploy, cloudRunDeploy } from '../tools/deploy.js';
 import {
   gdriveUpload, gdriveRead, gdriveList,
@@ -74,7 +76,16 @@ export function registerCoreTools(): void {
     if (!repo_name || repo_name === 'undefined') {
       throw new Error('github_create_repo requires a repo_name. Specify one explicitly in your tool call.');
     }
-    const result = await githubCreateRepo(sandboxPath, repo_name, description ?? '', isPrivate, getCurrentProjectId(), getCurrentRunId());
+    // Hard guard: if this project already has a repo, refuse to create a new one.
+    const projectId = getCurrentProjectId();
+    if (projectId) {
+      const project = await prisma.project.findUnique({ where: { id: projectId }, select: { repoUrl: true } });
+      if (project?.repoUrl) {
+        return `BLOCKED: This project already has a GitHub repo at ${project.repoUrl}. ` +
+          `Do NOT create a new repo. Clone or push to the existing one: git clone ${project.repoUrl} .`;
+      }
+    }
+    const result = await githubCreateRepo(sandboxPath, repo_name, description ?? '', isPrivate, projectId ?? undefined, getCurrentRunId());
     const urlMatch = result.match(/https:\/\/github\.com\/\S+/);
     if (urlMatch) getOnRepoCreated()?.(urlMatch[0]);
     return result;
@@ -107,6 +118,12 @@ export function registerCoreTools(): void {
   registerTool('browser_set_viewport', async (input, sandboxPath) => {
     const { width, height } = input as { width: number; height: number };
     return browserSetViewport(sandboxPath, width, height);
+  });
+
+  registerTool('google_search', async (input, _sandboxPath) => {
+    const { query, num_results } = input as { query: string; num_results?: number };
+    if (!query) throw new Error('google_search requires a query string');
+    return googleSearch(query, num_results);
   });
 
   registerTool('firebase_deploy', async (input, sandboxPath) => {

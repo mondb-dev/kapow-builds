@@ -47,17 +47,20 @@ Be thorough. This reasoning directly shapes the quality of the plan.`;
 const RESUME_ADDENDUM = `
 === RESUMING EXISTING PROJECT ===
 
-This is NOT a fresh build. You are planning an UPDATE to an existing, deployed project.
+This is NOT a fresh build. You are planning an UPDATE or continuation of an existing project.
 
 CRITICAL RULES:
-1. CLONE FIRST: The very first task in phase 1 must be a shell task that clones the existing GitHub repo. Use: git clone <repo_url> .
-2. DELTA ONLY: Plan only the changes described in the brief. Do not re-implement what already exists.
-3. NO SCAFFOLD: Do not create new project structure, package.json, or boilerplate — it already exists.
-4. PRESERVE: Assume existing functionality works. Only touch what the brief asks to change.
-5. RE-DEPLOY: The final task must re-deploy to the same platform (Vercel/Netlify/Firebase) used originally.
+1. EXISTING REPO: If the preferences contain "Existing GitHub repo: <url>", you MUST use that exact URL.
+   - NEVER plan a github_create_repo task — the repo already exists. This is a hard rule, not a suggestion.
+   - The first task must clone this repo: shell_exec "git clone <url> ." or set it as remote on existing work.
+2. DELTA ONLY: Plan only what the brief asks for. Do not re-implement anything that already exists.
+3. NO SCAFFOLD: Do not create new project structure, package.json, or boilerplate.
+4. PRESERVE: Assume existing code works. Only touch what the brief explicitly asks to change.
+5. RE-DEPLOY: Only include a deploy task if the original project had a live URL. Research, writing, and
+   analysis projects that delivered documents do NOT need a deploy step — even if the brief says "push to git."
+   For those, the final task is just: git commit + git push to the existing repo.
 
-The existing project's tech stack and architecture are in the user preferences. Use them to inform your plan.
-If the GitHub repo URL is provided in preferences, use it exactly in the clone task.
+Read the "Existing GitHub repo" value from preferences and use it verbatim in task descriptions.
 `;
 
 const AGILE_ADDENDUM = `
