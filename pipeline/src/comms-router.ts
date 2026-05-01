@@ -434,12 +434,12 @@ export class CommsRouter {
       return;
     }
 
-    if (choice.buttonId === 'cancel' || !choice.buttonId) {
+    if (choice.choice === 'cancel' || !choice.choice) {
       await this.reply(msg, '✅ Decommission cancelled. Nothing was deleted.');
       return;
     }
 
-    const toDelete = choice.buttonId === 'all_project' ? [target, ...siblings] : [target];
+    const toDelete = choice.choice === 'all_project' ? [target, ...siblings] : [target];
 
     // Step 3: execute teardown, step by step
     await this.reply(msg, `🔧 Starting teardown of ${toDelete.length} resource(s)…`);
