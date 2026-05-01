@@ -25,10 +25,19 @@
  * that ISN'T a button reply (those resolve in CommsBus.dispatchInbound).
  */
 import { prisma } from 'kapow-db';
-import { listInfra, updateInfraStatus } from 'kapow-db';
+import { listInfra, updateInfraStatus, markInfraDeleted } from 'kapow-db';
+import type { InfraWithProject } from 'kapow-db';
 import type {
   CommsBus, InboundMessage, PromptRequest, InboundReply,
 } from 'kapow-shared';
+import {
+  teardownCloudRun,
+  teardownGitHubRepo,
+  teardownNetlifySite,
+  teardownFirebaseHosting,
+  teardownVercelProject,
+  teardownArtifactRegistryImage,
+} from './tools/teardown.js';
 
 // ── Phase taxonomy ──────────────────────────────────────────────────
 
@@ -261,6 +270,11 @@ export class CommsRouter {
         return;
       }
 
+      case '/decommission': {
+        await this.handleDecommission(conv, arg, msg);
+        return;
+      }
+
       case '/infra': {
         const resources = await listInfra();
         if (resources.length === 0) {
@@ -327,6 +341,7 @@ export class CommsRouter {
           '/cancel — stop the current run\n' +
           '/go — start planning after scoping\n' +
           '/infra — list all infra with live health check\n' +
+          '/decommission [n] — teardown wizard for a specific resource\n' +
           '/help — show this',
         );
         return;
@@ -334,6 +349,113 @@ export class CommsRouter {
       default:
         await this.reply(msg, `Unknown command: ${cmd}. /help for the list.`);
     }
+  }
+
+  // ── Decommission wizard ─────────────────────────────────────────
+
+  private async handleDecommission(
+    conv: { id: string },
+    arg: string,
+    msg: InboundMessage,
+  ): Promise<void> {
+    const resources = await listInfra();
+    const active = resources.filter((r) => r.status !== 'DELETED');
+
+    if (!arg) {
+      // Step 0: show numbered list
+      if (active.length === 0) {
+        await this.reply(msg, '📭 No active infrastructure to decommission.');
+        return;
+      }
+      const typeLabel = infraTypeLabel();
+      const lines = active.map((r, i) => {
+        const project = r.projectName ? ` — <i>${escape(r.projectName)}</i>` : '';
+        const url = r.url ? `\n   ${escape(r.url)}` : '';
+        return `${i + 1}. ${typeLabel[r.type] ?? r.type}: <b>${escape(r.name)}</b>${project}${url}`;
+      });
+      await this.reply(msg,
+        '<b>Active Infrastructure</b>\n\n' +
+        lines.join('\n\n') +
+        '\n\n📋 Reply <code>/decommission &lt;number&gt;</code> to open the teardown wizard for that resource.',
+      );
+      return;
+    }
+
+    // Step 1: load the chosen resource
+    const idx = parseInt(arg, 10) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= active.length) {
+      await this.reply(msg, `❌ Invalid number. Use /decommission (no number) to see the list.`);
+      return;
+    }
+    const target = active[idx];
+    const typeLabel = infraTypeLabel();
+
+    // Find all infra in the same project (siblings)
+    const siblings = target.projectId
+      ? active.filter((r) => r.projectId === target.projectId && r.id !== target.id)
+      : [];
+
+    // Step 2: build dependency card and send wizard prompt
+    const targetLine = `${typeLabel[target.type] ?? target.type}: <b>${escape(target.name)}</b>${target.url ? `\n  URL: ${escape(target.url)}` : ''}${target.region ? ` [${escape(target.region)}]` : ''}`;
+    const projectLine = target.projectName ? `\n📁 Project: <b>${escape(target.projectName)}</b>` : '';
+    const siblingsBlock = siblings.length > 0
+      ? '\n\n<b>Other resources in this project:</b>\n' +
+        siblings.map((s) => `  • ${typeLabel[s.type] ?? s.type}: ${escape(s.name)}${s.url ? ` — ${escape(s.url)}` : ''}`).join('\n')
+      : '';
+
+    const warningBlock = buildWarnings(target, siblings);
+
+    const card =
+      `<b>Decommission Wizard</b>\n\n` +
+      `🎯 <b>Target</b>\n${targetLine}${projectLine}` +
+      siblingsBlock +
+      (warningBlock ? `\n\n⚠️ <b>Warnings</b>\n${warningBlock}` : '') +
+      `\n\n<i>This action cannot be undone. Choose what to remove:</i>`;
+
+    const buttons: { id: string; label: string; style?: 'primary' | 'danger' }[] = [
+      { id: 'target_only', label: `🗑 This only (${typeLabel[target.type] ?? target.type})`, style: 'danger' },
+    ];
+    if (siblings.length > 0) {
+      buttons.push({ id: 'all_project', label: '💣 All project infra', style: 'danger' });
+    }
+    buttons.push({ id: 'cancel', label: '✗ Cancel' });
+
+    let choice: InboundReply;
+    try {
+      choice = await this.deps.commsBus.prompt({
+        conversationId: conv.id,
+        kind: 'plan_approval',
+        text: card,
+        timeoutMs: 120_000,
+        buttons,
+      });
+    } catch {
+      await this.reply(msg, '⏱ Wizard timed out. Run /decommission again when ready.');
+      return;
+    }
+
+    if (choice.buttonId === 'cancel' || !choice.buttonId) {
+      await this.reply(msg, '✅ Decommission cancelled. Nothing was deleted.');
+      return;
+    }
+
+    const toDelete = choice.buttonId === 'all_project' ? [target, ...siblings] : [target];
+
+    // Step 3: execute teardown, step by step
+    await this.reply(msg, `🔧 Starting teardown of ${toDelete.length} resource(s)…`);
+
+    for (const resource of toDelete) {
+      try {
+        const result = await executeTeardown(resource);
+        await markInfraDeleted(resource.type, resource.name);
+        await this.reply(msg, `✅ ${result}`);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await this.reply(msg, `❌ Failed to remove ${typeLabel[resource.type] ?? resource.type} <b>${escape(resource.name)}</b>:\n<code>${escape(errMsg.slice(0, 300))}</code>\n\nSkipping — fix manually if needed.`);
+      }
+    }
+
+    await this.reply(msg, `🏁 Decommission complete. Use /infra to verify.`);
   }
 
   // ── Approval text fallback ──────────────────────────────────────
@@ -366,6 +488,81 @@ export class CommsRouter {
   private async reply(_msg: InboundMessage, text: string): Promise<void> {
     await this.deps.commsBus.notify(text);
   }
+}
+
+// ── Decommission helpers ────────────────────────────────────────────
+
+function infraTypeLabel(): Record<string, string> {
+  return {
+    CLOUD_RUN: 'Cloud Run',
+    FIREBASE_HOSTING: 'Firebase Hosting',
+    FIREBASE_FUNCTIONS: 'Firebase Functions',
+    NETLIFY_SITE: 'Netlify',
+    GITHUB_REPO: 'GitHub Repo',
+    VERCEL_SITE: 'Vercel',
+    GCP_VM: 'GCP VM',
+    ARTIFACT_REGISTRY: 'Artifact Registry',
+  };
+}
+
+function buildWarnings(target: InfraWithProject, siblings: InfraWithProject[]): string {
+  const warnings: string[] = [];
+  const all = [target, ...siblings];
+
+  if (all.some((r) => r.type === 'GITHUB_REPO')) {
+    warnings.push('GitHub repos will be permanently deleted (no recovery without backup).');
+  }
+  if (all.some((r) => r.type === 'CLOUD_RUN')) {
+    warnings.push('Cloud Run services stop serving traffic immediately on deletion.');
+  }
+  if (all.some((r) => ['NETLIFY_SITE', 'VERCEL_SITE', 'FIREBASE_HOSTING'].includes(r.type))) {
+    warnings.push('Hosted sites will go offline — URLs will return 404.');
+  }
+  if (all.some((r) => r.type === 'FIREBASE_FUNCTIONS')) {
+    warnings.push('Firebase Functions will stop executing — dependent services may break.');
+  }
+  return warnings.map((w) => `• ${w}`).join('\n');
+}
+
+async function executeTeardown(resource: InfraWithProject): Promise<string> {
+  const region = resource.region ?? (process.env.GOOGLE_CLOUD_REGION ?? 'asia-southeast1');
+
+  switch (resource.type) {
+    case 'CLOUD_RUN':
+      return teardownCloudRun(resource.name, region);
+
+    case 'GITHUB_REPO':
+      // Archive by default (safer); pass archive=false to fully delete
+      return teardownGitHubRepo(resource.name, false);
+
+    case 'NETLIFY_SITE':
+      if (!resource.resourceId) throw new Error('No Netlify site ID stored — delete manually at netlify.com/sites');
+      return teardownNetlifySite(resource.resourceId, resource.name);
+
+    case 'FIREBASE_HOSTING':
+      return teardownFirebaseHosting(resource.name);
+
+    case 'FIREBASE_FUNCTIONS':
+      // Functions are scoped to GCP project — disabling hosting doesn't remove functions.
+      // Individual function deletion requires knowing function names; skip for now.
+      throw new Error('Firebase Functions teardown is not automated — delete manually via GCP Console > Cloud Functions.');
+
+    case 'VERCEL_SITE':
+      return teardownVercelProject(resource.name);
+
+    case 'ARTIFACT_REGISTRY':
+      return teardownArtifactRegistryImage(resource.name, region);
+
+    case 'GCP_VM':
+      throw new Error('GCP VM teardown is not automated — delete manually via GCP Console to avoid accidents.');
+
+    default:
+      throw new Error(`No teardown procedure for type: ${resource.type}`);
+  }
+}
+
+function escape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ── Orchestrator-side helpers (approvals) ───────────────────────────
