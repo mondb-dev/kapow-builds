@@ -127,6 +127,47 @@ enum ToolStatus {
   DEPRECATED
 }
 
+// ── Infrastructure Registry ───────────────────────────────────────────
+
+model InfraResource {
+  id          String      @id @default(cuid())
+  type        InfraType
+  provider    String      // 'gcp', 'netlify', 'firebase', 'github', 'vercel'
+  name        String      // service name, repo name, site name
+  resourceId  String?     // provider-specific ID (e.g., Netlify site ID)
+  url         String?     // live URL
+  region      String?     // GCP region, if applicable
+  status      InfraStatus @default(UNKNOWN)
+  lastChecked DateTime?
+  projectId   String?
+  project     Project?    @relation(fields: [projectId], references: [id])
+  runId       String?     // run that created this resource
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([type, name])
+  @@index([projectId])
+  @@index([status])
+}
+
+enum InfraType {
+  CLOUD_RUN
+  FIREBASE_HOSTING
+  FIREBASE_FUNCTIONS
+  NETLIFY_SITE
+  GITHUB_REPO
+  VERCEL_SITE
+  GCP_VM
+  ARTIFACT_REGISTRY
+}
+
+enum InfraStatus {
+  ACTIVE
+  INACTIVE
+  UNKNOWN
+  DELETED
+}
+
 // ── Security (global observation) ────────────────────────────────────
 
 model SecurityAlert {
@@ -220,6 +261,7 @@ model Project {
   preferences ProjectPreference[]
   alerts      SecurityAlert[]
   auditLog    AuditEntry[]
+  infra       InfraResource[]
 
   @@index([name])
 }

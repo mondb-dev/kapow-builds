@@ -1,11 +1,14 @@
 import { simpleGit, SimpleGit } from 'simple-git';
 import { Octokit } from '@octokit/rest';
+import { recordInfra } from 'kapow-db';
 
 export async function githubCreateRepo(
   sandboxPath: string,
   repoName: string,
   description: string,
-  isPrivate: boolean = true
+  isPrivate: boolean = true,
+  kapowProjectId?: string,
+  kapowRunId?: string,
 ): Promise<string> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN env var is not set');
@@ -51,6 +54,8 @@ export async function githubCreateRepo(
 
   git.env('GIT_TERMINAL_PROMPT', '0');
   await git.push('origin', 'main', ['--set-upstream']);
+
+  await recordInfra({ type: 'GITHUB_REPO', provider: 'github', name: `${user.login}/${usedName}`, url: repo.html_url, projectId: kapowProjectId, runId: kapowRunId }).catch(() => undefined);
 
   return `Created repo ${user.login}/${usedName} → ${repo.html_url}`;
 }

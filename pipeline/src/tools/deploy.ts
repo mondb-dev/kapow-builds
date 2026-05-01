@@ -1,6 +1,7 @@
 import { shellExec } from './shell.js';
 import { writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { recordInfra } from 'kapow-db';
 
 function shellQuote(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
@@ -40,7 +41,9 @@ export async function vercelDeploy(
   sandboxPath: string,
   projectName: string,
   buildCommand?: string,
-  outputDir?: string
+  outputDir?: string,
+  projectId?: string,
+  runId?: string,
 ): Promise<string> {
   const token = process.env.VERCEL_TOKEN;
   if (!token) throw new Error('VERCEL_TOKEN env var is not set');
@@ -63,13 +66,19 @@ export async function vercelDeploy(
   // Vercel CLI prints the deployment URL on the last line
   const lines = result.stdout.trim().split('\n').filter(Boolean);
   const url = lines.find((l) => l.startsWith('https://'));
+
+  await recordInfra({ type: 'VERCEL_SITE', provider: 'vercel', name: projectName, url: url ?? undefined, projectId, runId }).catch(() => undefined);
+
   return url ? `Deployed to Vercel: ${url}` : result.stdout.slice(0, 500);
 }
 
 export async function netlifyDeploy(
   sandboxPath: string,
   siteId?: string,
-  publishDir: string = '.'
+  publishDir: string = '.',
+  siteName?: string,
+  projectId?: string,
+  runId?: string,
 ): Promise<string> {
   const token = process.env.NETLIFY_AUTH_TOKEN ?? process.env.NETLIFY_TOKEN;
   if (!token) throw new Error('NETLIFY_AUTH_TOKEN env var is not set');
@@ -86,9 +95,16 @@ export async function netlifyDeploy(
     throw new Error(`Netlify deploy failed:\n${result.stderr || result.stdout}`);
   }
 
-  // Parse the live URL from Netlify CLI output
+  // Parse the live URL and site ID from Netlify CLI output
   const match = result.stdout.match(/Website URL:\s+(https:\/\/[^\s]+)/);
-  return match ? `Deployed to Netlify: ${match[1]}` : result.stdout.slice(0, 500);
+  const siteIdMatch = result.stdout.match(/Site ID:\s+([a-f0-9-]+)/i);
+  const url = match?.[1];
+  const resolvedSiteId = siteId ?? siteIdMatch?.[1];
+  const name = siteName ?? resolvedSiteId ?? 'netlify-site';
+
+  await recordInfra({ type: 'NETLIFY_SITE', provider: 'netlify', name, resourceId: resolvedSiteId, url, projectId, runId }).catch(() => undefined);
+
+  return url ? `Deployed to Netlify: ${url}` : result.stdout.slice(0, 500);
 }
 
 type FirebaseTarget = 'hosting' | 'functions' | 'firestore' | 'storage' | 'all';
@@ -99,6 +115,8 @@ async function firebaseDeployCore(
   targets: FirebaseTarget[] = ['hosting'],
   publicDir: string = 'dist',
   functionsRuntime: string = 'nodejs20',
+  kapowProjectId?: string,
+  kapowRunId?: string,
 ): Promise<string> {
   const gcpProject = projectId || process.env.GOOGLE_CLOUD_PROJECT;
   if (!gcpProject) throw new Error('GOOGLE_CLOUD_PROJECT is required for Firebase deploy');
@@ -159,8 +177,17 @@ async function firebaseDeployCore(
   const hostingMatch = result.stdout.match(/Hosting URL:\s+(https:\/\/[^\s]+)/);
   const functionsMatch = result.stdout.match(/Function URL[^:]*:\s+(https:\/\/[^\s]+)/g);
   const lines: string[] = [];
-  if (hostingMatch) lines.push(`Hosting: ${hostingMatch[1]}`);
-  if (functionsMatch) lines.push(...functionsMatch.map(l => `Function: ${l.split(/\s+/).pop()}`));
+  if (hostingMatch) {
+    lines.push(`Hosting: ${hostingMatch[1]}`);
+    await recordInfra({ type: 'FIREBASE_HOSTING', provider: 'firebase', name: gcpProject, url: hostingMatch[1], projectId: kapowProjectId, runId: kapowRunId }).catch(() => undefined);
+  }
+  if (functionsMatch) {
+    for (const l of functionsMatch) {
+      const fnUrl = l.split(/\s+/).pop();
+      lines.push(`Function: ${fnUrl}`);
+      await recordInfra({ type: 'FIREBASE_FUNCTIONS', provider: 'firebase', name: `${gcpProject}-functions`, url: fnUrl, projectId: kapowProjectId, runId: kapowRunId }).catch(() => undefined);
+    }
+  }
   if (lines.length === 0) lines.push(`Deployed to Firebase (project: ${gcpProject})`);
   return lines.join('\n');
 }
@@ -169,16 +196,20 @@ export async function firebaseDeploy(
   sandboxPath: string,
   projectId: string,
   publicDir: string = 'dist',
+  kapowProjectId?: string,
+  kapowRunId?: string,
 ): Promise<string> {
-  return firebaseDeployCore(sandboxPath, projectId, ['hosting'], publicDir);
+  return firebaseDeployCore(sandboxPath, projectId, ['hosting'], publicDir, 'nodejs20', kapowProjectId, kapowRunId);
 }
 
 export async function firebaseFunctionsDeploy(
   sandboxPath: string,
   projectId: string,
   runtime: string = 'nodejs20',
+  kapowProjectId?: string,
+  kapowRunId?: string,
 ): Promise<string> {
-  return firebaseDeployCore(sandboxPath, projectId, ['functions'], '.', runtime);
+  return firebaseDeployCore(sandboxPath, projectId, ['functions'], '.', runtime, kapowProjectId, kapowRunId);
 }
 
 export async function firebaseFullDeploy(
@@ -187,8 +218,10 @@ export async function firebaseFullDeploy(
   targets: FirebaseTarget[],
   publicDir: string = 'dist',
   functionsRuntime: string = 'nodejs20',
+  kapowProjectId?: string,
+  kapowRunId?: string,
 ): Promise<string> {
-  return firebaseDeployCore(sandboxPath, projectId, targets, publicDir, functionsRuntime);
+  return firebaseDeployCore(sandboxPath, projectId, targets, publicDir, functionsRuntime, kapowProjectId, kapowRunId);
 }
 
 export async function cloudRunDeploy(
@@ -199,6 +232,8 @@ export async function cloudRunDeploy(
   port: number = 8080,
   memory: string = '512Mi',
   envVars?: Record<string, string>,
+  kapowProjectId?: string,
+  kapowRunId?: string,
 ): Promise<string> {
   const gcpProject = process.env.GOOGLE_CLOUD_PROJECT;
   if (!gcpProject) throw new Error('GOOGLE_CLOUD_PROJECT is required for Cloud Run deploy');
@@ -246,5 +281,8 @@ export async function cloudRunDeploy(
 
   const urlMatch = deployResult.stdout.match(/Service URL:\s+(https:\/\/[^\s]+)/);
   const url = urlMatch?.[1] ?? '';
+
+  await recordInfra({ type: 'CLOUD_RUN', provider: 'gcp', name: sanitizedName, url: url || undefined, region, projectId: kapowProjectId, runId: kapowRunId }).catch(() => undefined);
+
   return url ? `Deployed to Cloud Run: ${url}` : deployResult.stdout.slice(0, 500);
 }

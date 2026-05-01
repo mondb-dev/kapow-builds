@@ -25,6 +25,7 @@
  * that ISN'T a button reply (those resolve in CommsBus.dispatchInbound).
  */
 import { prisma } from 'kapow-db';
+import { listInfra, updateInfraStatus } from 'kapow-db';
 import type {
   CommsBus, InboundMessage, PromptRequest, InboundReply,
 } from 'kapow-shared';
@@ -260,6 +261,62 @@ export class CommsRouter {
         return;
       }
 
+      case '/infra': {
+        const resources = await listInfra();
+        if (resources.length === 0) {
+          await this.reply(msg, '📭 No infrastructure recorded yet. Resources appear here after a successful deploy or repo creation.');
+          return;
+        }
+
+        // Ping HTTP URLs in parallel to check live status
+        await Promise.all(resources.map(async (r) => {
+          if (!r.url) return;
+          try {
+            const res = await fetch(r.url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+            await updateInfraStatus(r.id, res.ok || res.status < 500 ? 'ACTIVE' : 'INACTIVE').catch(() => undefined);
+            r.status = res.ok || res.status < 500 ? 'ACTIVE' : 'INACTIVE';
+          } catch {
+            await updateInfraStatus(r.id, 'INACTIVE').catch(() => undefined);
+            r.status = 'INACTIVE';
+          }
+        }));
+
+        // Group by project
+        const byProject = new Map<string, typeof resources>();
+        for (const r of resources) {
+          const key = r.projectName ?? '(no project)';
+          if (!byProject.has(key)) byProject.set(key, []);
+          byProject.get(key)!.push(r);
+        }
+
+        const statusIcon = (s: string) => s === 'ACTIVE' ? '🟢' : s === 'INACTIVE' ? '🔴' : '⚪';
+        const typeLabel: Record<string, string> = {
+          CLOUD_RUN: 'Cloud Run',
+          FIREBASE_HOSTING: 'Firebase Hosting',
+          FIREBASE_FUNCTIONS: 'Firebase Functions',
+          NETLIFY_SITE: 'Netlify',
+          GITHUB_REPO: 'GitHub Repo',
+          VERCEL_SITE: 'Vercel',
+          GCP_VM: 'GCP VM',
+          ARTIFACT_REGISTRY: 'Artifact Registry',
+        };
+
+        const lines: string[] = ['<b>Infrastructure</b>\n'];
+        for (const [project, items] of byProject) {
+          lines.push(`<b>${project}</b>`);
+          for (const r of items) {
+            const label = typeLabel[r.type] ?? r.type;
+            const icon = statusIcon(r.status);
+            const urlPart = r.url ? `\n  <a href="${r.url}">${r.url}</a>` : '';
+            const regionPart = r.region ? ` [${r.region}]` : '';
+            lines.push(`${icon} ${label}: <code>${r.name}</code>${regionPart}${urlPart}`);
+          }
+          lines.push('');
+        }
+        await this.reply(msg, lines.join('\n'));
+        return;
+      }
+
       case '/help':
         await this.reply(msg,
           '<b>Kapow commands</b>\n' +
@@ -269,6 +326,7 @@ export class CommsRouter {
           '/status — current run state\n' +
           '/cancel — stop the current run\n' +
           '/go — start planning after scoping\n' +
+          '/infra — list all infra with live health check\n' +
           '/help — show this',
         );
         return;
