@@ -42,9 +42,13 @@ export function createOrchestratorHooks(): OrchestratorHooks {
       // Fire-and-forget; progress streams back through CommsBus events.
       void runPipeline(run.id, brief, (line) => {
         console.log(`[run ${run.id}] ${line}`);
-      }, project.id, preferences).catch((err) => {
-        console.error(`[run ${run.id}] failed:`, err instanceof Error ? err.message : err);
-      });
+      }, project.id, preferences)
+        .catch((err) => {
+          console.error(`[run ${run.id}] failed:`, err instanceof Error ? err.message : err);
+        })
+        .finally(() => {
+          prisma.conversation.update({ where: { id: conversationId }, data: { phase: 'idle' } }).catch(() => undefined);
+        });
 
       console.log(`[hooks] Started run ${run.id} for ${requestedBy.userName} (conv ${conversationId})`);
       return { projectId: project.id, runId: run.id };
@@ -118,9 +122,13 @@ export function createOrchestratorHooks(): OrchestratorHooks {
 
       void runPipeline(run.id, direction, (line) => {
         console.log(`[run ${run.id}] ${line}`);
-      }, project.id, preferences).catch((err) => {
-        console.error(`[run ${run.id}] resume failed:`, err instanceof Error ? err.message : err);
-      });
+      }, project.id, preferences)
+        .catch((err) => {
+          console.error(`[run ${run.id}] resume failed:`, err instanceof Error ? err.message : err);
+        })
+        .finally(() => {
+          prisma.conversation.update({ where: { id: conversationId }, data: { phase: 'idle' } }).catch(() => undefined);
+        });
 
       console.log(`[hooks] Resumed project "${project.name}" (run ${run.id}) for ${requestedBy.userName}`);
       return { projectId: project.id, runId: run.id };
