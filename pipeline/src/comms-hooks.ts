@@ -130,13 +130,15 @@ export function createOrchestratorHooks(): OrchestratorHooks {
       const lastRun = project.runs[0];
       const arch = lastRun?.planData as { architecture?: { approach?: string; structure?: string; conventions?: string } } | null;
 
+      const originalBrief = lastRun?.plan ?? project.description ?? '';
       const preferences = [
         `Resuming project: ${project.name}`,
+        // Put topic first and explicitly — prevents planner from hallucinating the subject
+        `ORIGINAL TOPIC (do not change or invent a different topic): ${originalBrief.slice(0, 400)}`,
         project.repoUrl ? `Existing GitHub repo: ${project.repoUrl} — DO NOT call github_create_repo, the repo already exists. Clone it or set it as origin and push.` : '',
         arch?.architecture?.approach ? `Original tech stack: ${arch.architecture.approach}` : '',
         arch?.architecture?.structure ? `Original structure: ${arch.architecture.structure}` : '',
         arch?.architecture?.conventions ? `Conventions: ${arch.architecture.conventions}` : '',
-        `Original brief: ${lastRun?.plan?.slice(0, 300) ?? project.description ?? ''}`,
       ].filter(Boolean).join('\n');
 
       const run = await prisma.run.create({
