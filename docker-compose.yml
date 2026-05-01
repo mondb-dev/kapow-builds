@@ -53,6 +53,8 @@ services:
         condition: service_completed_successfully
       technician:
         condition: service_started
+    # Push schema on every start so rebuilds never leave the DB out of sync
+    command: sh -c "cd /app/db && npx prisma db push --skip-generate && cd /app && node dist/index.js"
     restart: unless-stopped
 
   technician:
@@ -69,6 +71,7 @@ services:
     depends_on:
       db-init:
         condition: service_completed_successfully
+    command: sh -c "cd /app/db && npx prisma db push --skip-generate && cd /app && node dist/index.js"
     restart: unless-stopped
 
   board:
