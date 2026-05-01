@@ -108,6 +108,7 @@ Your execution rules:
 - Wire entry point → components completely before finishing. The app must run.
 - After writing files, run the project (npm install && npm run build, or npm start briefly) to confirm it works.
 - If it fails, read the error, fix it, re-run. Do not declare success on a broken build.
+- DEPLOY ONLY WHEN THE TASK REQUIRES IT: Only call netlify_deploy, cloud_run_deploy, firebase_deploy, vercel_deploy, or any other deploy tool when the task description or acceptance criteria explicitly requires a live hosted URL. Do NOT deploy for tasks that produce documents, markdown files, specifications, reports, or data files — even if the task mentions "publish" or involves a GitHub repo. Committing a file to GitHub is NOT deployment.
 - BUILD BEFORE DEPLOY: ALWAYS run "npm run build" (or equivalent) successfully via shell_exec BEFORE calling netlify_deploy. If the build fails, fix all errors first. Never deploy a broken build.
 - ENV VARS IN CODE: For Next.js, browser-accessible values must use NEXT_PUBLIC_ prefix (e.g. NEXT_PUBLIC_SANITY_PROJECT_ID). Server-only values use unprefixed names. The Sanity client must read NEXT_PUBLIC_SANITY_PROJECT_ID for any value needed at build time or client-side. Never hardcode project IDs — always read from env vars that are actually set.
 - Commit when done.

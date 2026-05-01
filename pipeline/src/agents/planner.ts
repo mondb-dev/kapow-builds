@@ -104,14 +104,16 @@ OVER-PLANNING IS A BUG. Every extra task adds latency, API calls, and failure po
 
 Before planning, classify the brief into ONE primary intent:
 
-- "development" — building software, scripts, configs, infrastructure, automation.
+- "development" — building runnable software: apps, websites, APIs, scripts, configs, infrastructure, automation.
   Signals: code, app, website, API, script, server, deploy, build, install, database, implement, create (software).
+  NEGATIVE SIGNALS (do NOT use development): the output is a document, spec, report, or markdown file, even if it gets committed to a GitHub repo. "Publish a spec to GitHub" is writing, not development.
 
 - "research" — finding, synthesizing, and citing information from multiple sources.
   Signals: research, find out, what is, compare, investigate, sources, literature, market analysis, look into, gather info.
 
-- "writing" — producing prose output: articles, blog posts, reports, documentation, emails, copy.
-  Signals: write, draft, compose, article, blog post, copy, documentation, letter, proposal, report.
+- "writing" — producing prose output: articles, blog posts, reports, documentation, emails, copy, specifications, design docs.
+  Signals: write, draft, compose, article, blog post, copy, documentation, letter, proposal, report, spec, specification.
+  NOTE: If the deliverable is a markdown document or spec file (even one committed to GitHub), this is "writing", not "development".
 
 - "analysis" — examining data, situations, or artifacts to produce structured findings and recommendations.
   Signals: analyze, evaluate, assess, benchmark, compare metrics, data, trends, strengths/weaknesses, SWOT.
@@ -123,7 +125,7 @@ Before planning, classify the brief into ONE primary intent:
 - "creative" — generating artistic, design, or imaginative output: poetry, fiction, naming, brainstorming, visual concepts.
   Signals: poem, story, creative, brainstorm, name ideas, tagline, slogan, design concept, haiku, song.
 
-If the brief combines intents (e.g., "research X then write a report"), use the FINAL DELIVERABLE's intent. A research report is "writing" with research tasks feeding it. A website that needs competitive analysis first is "development."
+If the brief combines intents (e.g., "research X then write a report"), use the FINAL DELIVERABLE's intent. A research report is "writing" with research tasks feeding it. A website that needs competitive analysis first is "development." A spec document committed to GitHub is "writing" — the GitHub repo is just the delivery vehicle, not the product.
 
 === STEP 2: PLAN BY INTENT ===
 
@@ -134,13 +136,15 @@ If the brief combines intents (e.g., "research X then write a report"), use the 
   It does NOT have: Flutter, Dart, Ruby, Java, Kotlin, Swift, .NET, Go, Rust, PHP, or any mobile SDK locally.
   However, ANY language or framework can be deployed via cloud_run_deploy (builds remotely via Cloud Build — no local runtime needed).
 
-  DEPLOY RULE: Any web project MUST include a final deploy phase. Choose the right deploy tool:
+  DEPLOY RULE (development intent ONLY — never apply this to research/writing/analysis/audit/creative):
+  Any web project MUST include a final deploy phase. Choose the right deploy tool:
     - Static/JAMstack (Next.js, React, Vue, plain HTML): github_create_repo → netlify_deploy (default)
     - Firebase Hosting only (SPA, static): github_create_repo → firebase_deploy
     - Firebase full-stack (Hosting + Cloud Functions + Firestore): github_create_repo → firebase_full_deploy
     - Cloud Functions only (API/backend on Firebase): github_create_repo → firebase_functions_deploy
     - Containerized backend (Laravel, Drupal, Django, Express+DB, any Dockerfile-based app): github_create_repo → cloud_run_deploy
   The final task MUST produce a live https:// URL. No exceptions. Do not skip for "demo" or "prototype" projects.
+  NEVER add a deploy task to a research, writing, analysis, audit, or creative project — even if the brief mentions "publish" or "GitHub repo". Those projects deliver files/documents, not hosted services.
 
   CLOUD RUN APPS: For PHP/Laravel, Python/Django, any app needing a persistent server: plan a Dockerfile task before the deploy task.
   FIREBASE APPS: For Firebase full-stack apps, the builder will create a functions/ directory, write Firestore rules, and call firebase_full_deploy with the appropriate targets array.
