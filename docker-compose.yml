@@ -29,7 +29,7 @@ services:
       args: { SERVICE: db }
     environment:
       <<: *db-env
-    command: sh -c "npx prisma db push --skip-generate && node dist/seed.js"
+    command: sh -c "npx prisma db push --skip-generate --accept-data-loss && node dist/seed.js"
     working_dir: /app/db
     depends_on:
       postgres:
@@ -54,7 +54,7 @@ services:
       technician:
         condition: service_started
     # Push schema on every start so rebuilds never leave the DB out of sync
-    command: sh -c "cd /app/db && npx prisma db push --skip-generate && cd /app/pipeline && node dist/index.js"
+    command: sh -c "cd /app/db && npx prisma db push --skip-generate --accept-data-loss && cd /app/pipeline && node dist/index.js"
     restart: unless-stopped
 
   technician:
@@ -71,7 +71,7 @@ services:
     depends_on:
       db-init:
         condition: service_completed_successfully
-    command: sh -c "cd /app/db && npx prisma db push --skip-generate && cd /app/technician && node dist/index.js"
+    command: sh -c "cd /app/db && npx prisma db push --skip-generate --accept-data-loss && cd /app/technician && node dist/index.js"
     restart: unless-stopped
 
   board:
